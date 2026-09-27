@@ -13,11 +13,13 @@ PYTEST  := .venv/bin/pytest
 
 .PHONY: install validate format clean
 
+# The dev group is declared in pyproject.toml and installed from there. Naming
+# the tools on the command line instead would let any older version already on
+# the machine satisfy the install and silently ignore the declared minimums.
 install:
 	python3 -m venv .venv
 	$(PIP) install --quiet --upgrade pip
-	$(PIP) install --quiet -e .
-	$(PIP) install --quiet ruff mypy pytest
+	$(PIP) install --quiet -e . --group dev
 
 # The gate. Order is cheapest and most-likely-to-fail first.
 validate:
