@@ -1,5 +1,7 @@
 # Quayline
 
+![gate](https://github.com/10xdev4u-alt/quayline/actions/workflows/gate.yml/badge.svg)
+
 An invoice-self-auditing engine for U.S. ocean demurrage and detention disputes.
 
 Quayline recomputes a charge from the invoice's own disclosures, compares it to
@@ -51,12 +53,26 @@ carrier data produces plausible, silent, wrong answers.
 
 ## Status
 
-Under construction. Nothing is merged yet. The issue set on GitHub is the
-backlog.
+Under construction. The engine, the ingestion layer and the dispute filing path
+are all open. The issue set on GitHub is the backlog.
+
+## Building and validating
+
+```
+make install    # creates .venv, installs the declared dev group, wires the git hooks
+make hooks      # re-wire the git hooks after a fresh clone
+make validate   # the gate: pytest, ruff check, ruff format --check, mypy
+make format     # apply ruff formatting and the autofixable lint rules
+```
+
+The gate is defined once, in the Makefile. The pre-push hook runs it, continuous
+integration runs it, and you run it. There is deliberately no second list of
+checks anywhere, because two lists drift and the drift is invisible until the day
+they disagree.
 
 ## Contributing
 
-Read [AGENTS.md](AGENTS.md) first. It is the contract: the eight stage pull
+Read [AGENTS.md](AGENTS.md) first. It is the contract: the twelve stage pull
 request loop, the six word commit subject, the co-author trailer, the merge policy,
 and the branch cleanup that runs after every merge.
 
