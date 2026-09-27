@@ -11,18 +11,21 @@ published and the disclaimer that dates it.
 
 The 2023 to 2024 window is UNVERIFIED and is not interpolated
 
-There is a 560 day hole. From 2023-02-27 until 2024-09-08 we do not hold the text
+There is a 560-day hole. From 2023-02-27 until 2024-09-08 we do not hold the text
 of ONE's inbound demurrage clock, and the two regimes either side of it disagree
 about the thing that matters, discharge against availability. A charge in that
 window might be keyed either way and we cannot say which from anything we hold.
 
 So ``basis_in_force`` returns ``None`` inside the gap rather than picking the
 nearer regime. Interpolating would produce a confident answer, and on this
-carrier a confident wrong answer is worth more than no answer, because the whole
-argument rests on the clock having started later than the carrier says.
+carrier a confident wrong answer is worse than no answer, because the whole
+argument rests on the clock having started later than the carrier says. A wrong
+answer here is not a weaker result, it is a letter that tells a carrier their
+clock was keyed the way we hoped and produces a charge that should have been
+paid.
 
-That gap is not a rare edge. It covers 2024 entirely, and a 2024 charge is still
-within a live dispute window.
+That gap is not a rare edge. It covers the last ten months of 2023 and the first
+eight of 2024, so a 2024 charge is often still inside a live dispute window.
 
 A correction to the research corpus
 
@@ -150,7 +153,7 @@ UNKNOWN_WINDOW = UnknownWindow(
     days=560,
     reason=(
         "ONE's inbound demurrage clock text for this window has not been obtained. The "
-        "regime before it is discharge based and the regime after it is availability "
+        "regime before it is discharge-based and the regime after it is availability-"
         "based, so interpolating either way produces a confident answer to a question "
         "we cannot answer."
     ),

@@ -266,7 +266,7 @@ per container rather than per vessel.
 | Effective to | Effective from | Clock start | Verbatim from ONE |
 |---|---|---|---|
 | 2023-02-26 | before | first full day after vessel **discharge** | VERIFIED, `us.one-line.com/DemDetPre2272023` |
-| 2024-09-08 | **2023-02-27** | **UNVERIFIED, text not held** | 560 day gap, not interpolated |
+| 2024-09-08 | **2023-02-27** | **UNVERIFIED, text not held** | 560-day gap, not interpolated |
 | 2026-03-31 | 2024-09-09 | next full **working** day after made **available** | VERIFIED, `us.one-line.com/DemDetPre11032025` |
 | present | 2026-04-01 | first full day when the container **is available** | VERIFIED, `us.one-line.com/demurragedetention` |
 
@@ -279,12 +279,17 @@ per container rather than per vessel.
 > that later policy while dating itself **2024-09-09** in its own disclaimer. The table had
 > picked up the default payer advisory date and attached it to the clock change.
 >
-> There is also a **560 day gap, not none**. From **2023-02-27 to 2024-09-08** we do not
-> hold the text of ONE's inbound demurrage clock. The regime before it is discharge based
-> and the regime after it is availability based, so this is a window where we cannot say
-> which clock applied, and it covers **all of 2024**. It is marked `UNVERIFIED` in
-> `tariffs/one.py` and is not interpolated, because the two candidate answers disagree
-> about the thing the whole dispute rests on.
+> There is also a **560-day gap, not none**, running **2023-02-27 to 2024-09-08**. We do
+> not hold the text of ONE's inbound demurrage clock for that window. The regime before it
+> is discharge-based and the regime after it is availability-based, so this is a window
+> where we cannot say which clock applied. It covers the last ten months of 2023 and the
+> first eight of 2024, and a 2024 charge is often still inside a live dispute window. It is
+> marked `UNVERIFIED` in `tariffs/one.py` and is not interpolated, because the two candidate
+> answers disagree about the thing the whole dispute rests on.
+>
+> The issue predicted this gap would end 2024-05-27, the OSRA effective date, which would
+> have made it 456 days. It is 104 days longer than that, and the extra 104 days are the
+> interval between the regulation taking effect and the carrier implementing it.
 >
 > The 2023-02-27 boundary is also narrower than this table implied. ONE's advisory for that
 > date concerns **outbound** demurrage and the Demurrage Free Receiving Date, not the

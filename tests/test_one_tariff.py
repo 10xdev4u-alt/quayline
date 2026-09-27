@@ -1,6 +1,6 @@
 """The four acceptance criteria on issue 23, one test block each.
 
-The gap matters more than the regimes here. A 560 day hole in the middle of a
+The gap matters more than the regimes here. A 560-day hole in the middle of a
 carrier's clock history is the kind of thing that gets quietly filled in by
 picking the nearest known answer, and this suite exists to make that impossible
 rather than merely discouraged.
@@ -267,12 +267,18 @@ def test_the_gap_is_longer_than_the_issue_predicted() -> None:
 
     2024-05-27 is the OSRA effective date and it is the point a reader expects
     the hole to end. It does not, because ONE's own page dates the availability
-    language 2024-09-09. The gap is 560 days rather than 425, and the extra 135
-    days are the difference between the regulation taking effect and the carrier
-    implementing it.
+    language 2024-09-09.
+
+    Counting inclusively, the issue's window is 456 days and the real one is 560,
+    so the gap is 104 days longer than predicted. Those 104 days are the interval
+    between the regulation taking effect and the carrier implementing it.
+
+    Both figures were wrong on the first pass. 425 and 135 were estimated rather
+    than computed, which is the habit this repository is supposed to be losing.
     """
     assert UNKNOWN_WINDOW.end > date(2024, 5, 27)
-    assert UNKNOWN_WINDOW.days > 425
+    assert UNKNOWN_WINDOW.days == 560
+    assert UNKNOWN_WINDOW.days > 456
     assert UNKNOWN_WINDOW.end == date(2024, 9, 8)
 
 
