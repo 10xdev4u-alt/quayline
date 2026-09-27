@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quayline"
+version = "0.1.0"
+description = "Invoice-self-auditing engine for U.S. ocean demurrage and detention disputes under 46 CFR Part 541"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16",
+    "mypy>=2.0",
+    "pytest>=9.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "PTH",  # use pathlib
+    "RET",  # return consistency
+    "ARG",  # unused arguments
+    "PL",   # pylint subset
+    "RUF",  # ruff specific
+]
+ignore = [
+    # Tariff tables are wide by nature and a wrapped rate row is unreadable.
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may assert on intentionally wrong values and use private helpers.
+"tests/*" = ["ARG001", "ARG002", "SLF001", "PLR2004"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["quayline"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+show_error_codes = true
+files = ["src", "tests"]
+plugins = []
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_subclassing_any = false
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers --strict-config"
