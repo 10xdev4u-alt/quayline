@@ -1,0 +1,11 @@
+# Two accounts named in AGENTS.md section one own everything.
+#
+# With require_code_owner_reviews true in config/branch_protection.json, an
+# approval from anyone not listed here does not satisfy the review requirement.
+# This file is the approver allowlist, because the branch protection API does
+# not have one.
+#
+# The author cannot approve their own pull request, so a change authored by one
+# account must be approved by the other. That is the intent.
+
+* @10xdev4u-alt @the-ai-developer

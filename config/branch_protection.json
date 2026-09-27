@@ -1,0 +1,47 @@
+{
+  "$schema_note": "Declarative branch policy for 10xdev4u-alt/quayline. Applied by scripts/configure_branch_protection.sh. The two top level objects map onto two different GitHub API surfaces, and conflating them is the main way this goes wrong. See docs/decisions/0001-protection-is-two-api-surfaces.md.",
+  "repository": {
+    "$comment": "PATCH /repos/{owner}/{repo}. Merge methods live only on this surface.",
+    "allow_merge_commit": true,
+    "allow_squash_merge": false,
+    "allow_rebase_merge": true,
+    "delete_branch_on_merge": true,
+    "$allow_squash_merge": "False. AGENTS.md section eight prohibits squash with no exceptions. Verified live on 2026-09-27: a squash merge is refused with 'the base branch policy prohibits the merge' while GET /branches/main/protection returns 404. The refusal is real and comes from here. The classic branch protection API has no field for merge methods, so a script that only writes protection leaves squash available and the refusal comes from somewhere else."
+  },
+  "branch_protection": {
+    "$comment": "PUT /repos/{owner}/{repo}/branches/main/protection. Everything the repository settings cannot express.",
+    "required_status_checks": {
+      "$comment": "The context is the job name in .github/workflows/gate.yml, which is 'make validate'. Not the workflow name, which is 'gate'. Getting this wrong makes every pull request permanently unmergeable: the check reports under one name, the rule requires another, so the requirement is never satisfied and never blocks.",
+      "strict": true,
+      "contexts": [
+        "make validate"
+      ],
+      "$strict": "True, which requires the branch to be current with its base before merging. Without it a green check can be reporting on a commit that is no longer on the branch. That is the same defect class as the hook in issue 76 that was configured, installed, and enforcing nothing."
+    },
+    "enforce_admins": true,
+    "required_pull_request_reviews": {
+      "$comment": "At least one approval, from a named account, on a branch that is up to date.",
+      "required_approving_review_count": 1,
+      "dismiss_stale_reviews": true,
+      "require_code_owner_reviews": true,
+      "$required_approving_review_count": "One, not two. An author cannot approve their own pull request, so on a two account repository requiring two approvals means no change can ever merge. The second account's approval is what makes the count of one sufficient.",
+      "$require_code_owner_reviews": "True, and this is what restricts approval to the two named accounts, because this API has no approver allowlist. Combined with .github/CODEOWNERS it means an approval from any other account does not satisfy the requirement. This field is the approver allowlist."
+    },
+    "required_conversation_resolution": true,
+    "required_linear_history": false,
+    "allow_force_pushes": false,
+    "allow_deletions": false,
+    "block_creations": false,
+    "lock_branch": false,
+    "restrictions": null,
+    "$required_linear_history": "False. This is a false value that looks like a bug. True forces squash or rebase merging, which is precisely what AGENTS.md section two prohibits. The field reads as 'keep the history linear' and actually means 'refuse merge commits'.",
+    "$restrictions": "Null means any collaborator with push access may push to main. That is a deliberate acceptance. Restricting to one account would mean the other cannot open a hotfix, and the review requirement already covers the risk this would address. Set to an object with 'users' to tighten."
+  },
+  "codeowners": {
+    "$comment": "The two accounts AGENTS.md section one names as owner and reviewer. With require_code_owner_reviews true, an approval from anyone outside this list does not satisfy the requirement.",
+    "accounts": [
+      "10xdev4u-alt",
+      "the-ai-developer"
+    ]
+  }
+}
