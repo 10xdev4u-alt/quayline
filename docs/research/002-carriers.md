@@ -132,10 +132,23 @@ Verbatim from the May 2026 D&D Guide:
 Outside the terminal or at a customs warehouse, the detention clock begins at
 release and free time starts the day after.
 
-A customs hold pauses both clocks and excludes the hold days from free time. High
-confidence, low fight. **The adverse side:** Hapag expressly keeps terminal
-storage chargeable during a hold. So a customs hold dispute recovers the line
-charge, not the storage.
+> **CORRECTION, 2026-09-27, issue 16.** Three things, verified against the May 2026 and
+> October 2024 editions of the guide, both of which carry the language identically.
+>
+> **The restart anchor is locus dependent and asymmetric.** The general sentence stops both
+> the demurrage and the detention clock. The restart sentence does not follow that symmetry.
+> Inside the terminal the guide names the **demurrage** clock. Outside the terminal or at a
+> customs warehouse it names the **detention** clock. The summary line above, "a customs hold
+> pauses both clocks", is right about the stop and wrong about the restart.
+>
+> **The rule is conditioned on fault.** "for no fault of the customer". A hold the customer
+> caused is outside the policy and no clock stops. This condition was missing here.
+>
+> **Pass-through charges are collected too.** Where Hapag collects terminal charges on the
+> operator's behalf, it invoices them onward, so a hold can be charged twice.
+>
+> The quote above is also abridged, with an ellipsis, so it was not verbatim. The full
+> paragraphs are transcribed in `tariffs/hapag.py`.
 
 ### The day-counting asymmetry
 
