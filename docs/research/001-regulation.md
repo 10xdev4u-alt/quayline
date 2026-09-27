@@ -203,6 +203,18 @@ to contact the terminal for availability does not satisfy the notice requirement
 The date of cargo availability should not be the date of vessel arrival unless
 the cargo is actually available that day.
 
+> **CORRECTION, 2026-09-27, issue 6.** The first sentence of the paragraph above is
+> **UNVERIFIED and is not in 545.5**. Read against the eCFR, (c)(2)(iii) says only that
+> the Commission "may consider the type of notice, to whom notice is provided, the
+> format of notice, method of distribution of notice, the timing of notice, and the
+> effect of the notice". It contains no statement about what fails to satisfy notice.
+>
+> The claim is plausible and is probably supported by FMC adjudication or a policy
+> statement rather than by the rule text, but no source was found, so it is carried as
+> `UNVERIFIED` in `engine/reasonableness.py` and is **not** encoded as a check. The
+> second sentence, on the availability date not being the vessel arrival date, is
+> consistent with (c)(2)(i) and is encoded as a check against that sub-factor.
+
 **545.5(d) is a claim in its own right.** A carrier with no published corroboration
 specification scores as unreasonable.
 
