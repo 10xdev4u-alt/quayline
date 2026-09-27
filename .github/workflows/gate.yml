@@ -1,0 +1,79 @@
+# Runs the project's own gate. One command, the same one the pre-push hook runs
+# and the same one an agent runs locally.
+#
+# There is no second definition of the checks here on purpose. A workflow that
+# lists its own test and lint steps drifts from the Makefile, and the drift is
+# invisible until the day the two disagree about what passed. The only thing this
+# file decides is where and when `make validate` runs.
+
+name: gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One run per branch. A new push supersedes the previous run rather than queuing
+# behind it, so a five commit branch does not take twenty five minutes to learn it
+# is broken.
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: make validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+        with:
+          # The commit-msg and pre-push hooks are not used in CI, and the gate
+          # they run is identical to the one below. Fetching no history keeps
+          # the checkout honest about what is being tested.
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the declared dev group
+        run: make install
+
+      - name: Run the gate
+        run: make validate
+
+      - name: Confirm the gate is the same one the Makefile defines
+        # Guards against someone adding steps to this workflow and calling it
+        # done. Cheap, and it makes the drift deliberate rather than accidental.
+        run: |
+          if grep -qE '^\s+-\s+run:\s+(pytest|ruff|mypy)' .github/workflows/gate.yml; then
+            echo "::error::this workflow must call make validate, not re-list the gate steps"
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Gate"
+            echo ""
+            echo "| Check | Command |"
+            echo "| --- | --- |"
+            echo "| tests | \`pytest\` |"
+            echo "| lint | \`ruff check .\` |"
+            echo "| format | \`ruff format --check .\` |"
+            echo "| types | \`mypy\` |"
+            echo ""
+            echo "Defined once in the Makefile. Run locally with \`make validate\`."
+          } >> "$GITHUB_STEP_SUMMARY"
