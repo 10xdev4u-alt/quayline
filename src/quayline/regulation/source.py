@@ -58,3 +58,45 @@ SECTION_541_5 = Provenance(
     effective="2024-05-28",
     url="https://www.ecfr.gov/current/title-46/section-541.5",
 )
+
+SECTION_541_7 = Provenance(
+    cite="46 CFR 541.7",
+    heading="Issuance of demurrage and detention invoices",
+    as_of="2026-09-24",
+    federal_register="89 FR 14363, Feb. 26, 2024",
+    effective="2024-05-28",
+    url="https://www.ecfr.gov/current/title-46/section-541.7",
+)
+
+SECTION_541_8 = Provenance(
+    cite="46 CFR 541.8",
+    heading="Requests for fee mitigation, refund, or waiver",
+    as_of="2026-09-24",
+    federal_register="89 FR 14363, Feb. 26, 2024",
+    effective="2024-05-28",
+    url="https://www.ecfr.gov/current/title-46/section-541.8",
+)
+
+# The whole of Part 541, as of the same currency date. Held because the claim
+# that 541.7(d) is the only cure right in the part is a claim about the whole
+# part, and a claim about a whole is not supportable from one section of it.
+#
+# Section inventory, for the record:
+#   541.1  purpose
+#   541.2  scope and applicability
+#   541.3  definitions
+#   541.4  [Reserved]
+#   541.5  failure to include required information
+#   541.6  contents of invoice
+#   541.7  issuance of demurrage and detention invoices
+#   541.8  requests for fee mitigation, refund, or waiver
+#   541.9 - 541.98  [Reserved]
+#   541.99  OMB control number
+PART_541 = Provenance(
+    cite="46 CFR Part 541",
+    heading="Demurrage and detention invoicing",
+    as_of="2026-09-24",
+    federal_register="89 FR 14363, Feb. 26, 2024",
+    effective="2024-05-28",
+    url=ECFR_PART_URL,
+)
