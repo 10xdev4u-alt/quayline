@@ -32,6 +32,12 @@ Rules:
 3. **`the-ai-developer` reviews.** It is the default reviewer on every pull
    request. `10xdev4u-alt` may also review. At least one approval is required and
    the approving reviewer must be one of those two accounts.
+
+   This is enforced, not merely expected. `.github/CODEOWNERS` names those two
+   accounts as owners of every path, and `config/branch_protection.json` sets
+   `require_code_owner_reviews`, so an approval from any other account does not
+   satisfy the requirement. The count is 1, not 2, because an author cannot
+   approve their own pull request.
 4. Commit signing is off. Merge commits are on. Squash is off. Branch delete on
    merge is on.
 
@@ -174,6 +180,17 @@ RISK: what breaks if this is wrong
 
 **Merge commit. Never squash. Never rebase-merge a pull request that has
 review conversation attached.** The history of the review is part of the record.
+
+This is enforced at the repository level, not by branch protection. Squash
+merging is switched off by `allow_squash_merge: false` in the repository
+settings, because the branch protection API has no field for merge methods. See
+`docs/decisions/0001-protection-is-two-api-surfaces.md`, and re-apply the whole
+policy with:
+
+```
+scripts/configure_branch_protection.sh           apply and verify
+scripts/configure_branch_protection.sh --check   verify only, change nothing
+```
 
 ### Stage 11. Clean
 
