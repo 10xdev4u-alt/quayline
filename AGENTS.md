@@ -123,16 +123,16 @@ Trailer, always:
 Co-Authored-By: the-ai-developer <the-ai-developer@users.noreply.github.com>
 ```
 
-Local validation runs before every push and must be green:
+Local validation runs before every push and must be green. **One command,**
+because a list of commands is a list of ways to skip one:
 
 ```
-pytest -q
-ruff check .
-ruff format --check .
-mypy src
+make install    # first time only, creates .venv and installs the dev group
+make validate   # the gate: pytest, ruff check, ruff format --check, mypy
 ```
 
-A commit that cannot be validated is not committed.
+`make validate` exits non-zero on any failure. A commit that cannot be validated
+is not committed.
 
 ### Stage 7. Push and open the pull request
 
@@ -308,10 +308,7 @@ All of these, every time:
 - [ ] Closes exactly one issue, with acceptance criteria met
 - [ ] Six word conventional commit subject
 - [ ] `Co-Authored-By: the-ai-developer` and no other co-author
-- [ ] `pytest -q` green
-- [ ] `ruff check .` clean
-- [ ] `ruff format --check .` clean
-- [ ] `mypy src` clean
+- [ ] `make validate` green
 - [ ] New code has tests that encode real data, not mocks of our own code
 - [ ] Every legal or tariff claim carries a citation or an `UNVERIFIED` marker
 - [ ] Written in the unslop standard
