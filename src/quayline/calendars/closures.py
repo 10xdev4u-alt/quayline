@@ -88,16 +88,48 @@ class ClosurePolicy:
     citation: str
     verified: bool
     note: str = ""
+    #: Entries we inferred rather than transcribed, and which therefore do not
+    #: count unless a caller says so. See :meth:`forgives`.
+    extends_free_time_inferred: frozenset[ClosureType] = frozenset()
 
-    def forgives(self, closure: ClosureType, *, after_free_time: bool = False) -> bool:
+    def forgives(
+        self,
+        closure: ClosureType,
+        *,
+        after_free_time: bool = False,
+        include_inferred: bool = False,
+    ) -> bool:
         """Whether this carrier does not charge for a day of this kind.
 
         ``after_free_time`` selects the window. The default is the free time
         window because a day inside the allowance is not chargeable by anyone, and
         asking about it is usually a caller checking its own arithmetic.
+
+        ``include_inferred`` is the opt in, and it defaults to False. An inferred
+        entry is excluded from the result unless the caller asks for it by name, so
+        the doubt cannot be reached by accident.
+
+        This changed in issue 112. Previously the inferred entry sat inside
+        ``extends_free_time`` next to the sourced ones, with a note explaining that
+        we had guessed. That note was true, and it was also skippable: a caller
+        reading ``forgives`` saw a set membership test and got the guess, and the
+        marker travelled as prose that the code never looked at. A note on a value
+        a caller reads is weaker than a type that cannot be misused, so the guess now
+        lives somewhere the default path cannot reach.
         """
-        forgiven = self.excluded_after_free_time if after_free_time else self.extends_free_time
-        return closure in forgiven
+        if after_free_time:
+            return closure in self.excluded_after_free_time
+        if closure in self.extends_free_time:
+            return True
+        return include_inferred and closure in self.extends_free_time_inferred
+
+    def effective_extends_free_time(
+        self, *, include_inferred: bool = False
+    ) -> frozenset[ClosureType]:
+        """The full set forgiven inside free time, opt in included or not."""
+        if include_inferred:
+            return self.extends_free_time | self.extends_free_time_inferred
+        return self.extends_free_time
 
     def unmentioned_types(self) -> frozenset[ClosureType]:
         """Closure types this policy says nothing about.
@@ -106,7 +138,9 @@ class ClosurePolicy:
         policy that forgives nothing and says nothing is Maersk's position and it
         is a position, but a new type should never arrive as a default.
         """
-        named = self.extends_free_time | self.excluded_after_free_time
+        named = (
+            self.effective_extends_free_time(include_inferred=True) | self.excluded_after_free_time
+        )
         return frozenset(ALL_CLOSURE_TYPES) - named
 
 
@@ -119,13 +153,8 @@ class ClosurePolicy:
 # has expired, and only for the unplanned kind. Scheduled closures are charged.
 HAPAG_US = ClosurePolicy(
     name="Hapag-Lloyd US",
-    extends_free_time=frozenset(
-        {
-            ClosureType.HOLIDAY,
-            ClosureType.SCHEDULED_CLOSURE,
-            ClosureType.UNSCHEDULED_SHUTOUT,
-        }
-    ),
+    extends_free_time=frozenset({ClosureType.HOLIDAY, ClosureType.UNSCHEDULED_SHUTOUT}),
+    extends_free_time_inferred=frozenset({ClosureType.SCHEDULED_CLOSURE}),
     excluded_after_free_time=frozenset({ClosureType.UNSCHEDULED_SHUTOUT}),
     source="Hapag-Lloyd D&D Guide USA, October 1 2024",
     citation=(

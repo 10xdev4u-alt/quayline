@@ -6,8 +6,11 @@ express. Three carriers, three answers, on the same closed gate.
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
+from quayline.calendars import freetime
 from quayline.calendars.closures import (
     ALL_CLOSURE_TYPES,
     CMA_CGM_US_CALIFORNIA,
@@ -75,7 +78,7 @@ def test_no_policy_field_is_a_bool() -> None:
     and those two land on opposite sides of a real dispute.
     """
     for policy in POLICIES.values():
-        for name in ("extends_free_time", "excluded_after_free_time"):
+        for name in ("extends_free_time", "excluded_after_free_time", "extends_free_time_inferred"):
             assert not isinstance(getattr(policy, name), bool), f"{policy.name}.{name} is a bool"
         # verified is a bool and is entitled to be, it is metadata about the source
         # rather than a term of the rule. The prohibition is on the rule being a flag.
@@ -88,21 +91,29 @@ def test_no_policy_field_is_a_bool() -> None:
             "citation",
             "verified",
             "note",
+            "extends_free_time_inferred",
         }
         # note is provenance about a doubtful entry, added when freetime.py turned out
         # to be the first module that actually exercises this policy. It is a string and
         # is entitled to be; the prohibition is on the rule being a flag.
         assert isinstance(policy.note, str)
+        # The inferred set joined the fields in issue 112, and it exists so that the
+        # guess is a value the default path cannot reach rather than a note nobody
+        # reads. Exact set equality above, so a field added here has to be added
+        # there.
+        assert isinstance(policy.extends_free_time_inferred, frozenset)
 
 
 def test_the_two_windows_differ_for_hapag() -> None:
     """The reason the policy has two sets rather than one.
 
-    Hapag extends free time for a scheduled closure and does not forgive it
-    afterwards. One set cannot hold both, and the scheduled/unscheduled pair is
-    the most valuable thing this module encodes.
+    Hapag forgives an unscheduled shutout inside free time and after it, and the
+    two windows are the reason the policy has two sets rather than one. The
+    scheduled/unscheduled pair is the most valuable thing this module encodes.
+
+    Scheduled closures are not asserted here at all. That entry is inferred, and
+    issue 112 moved it out of the sourced set; see the opt in tests below.
     """
-    assert HAPAG_US.forgives(SCHEDULED) is True
     assert HAPAG_US.forgives(SCHEDULED, after_free_time=True) is False
     assert HAPAG_US.forgives(UNSCHEDULED) is True
     assert HAPAG_US.forgives(UNSCHEDULED, after_free_time=True) is True
@@ -288,3 +299,71 @@ def test_closure_policy_requires_both_windows() -> None:
             citation="nowhere",
             verified=False,
         )
+
+
+# ---------------------------------------------------------------- issue 112
+# An inferred entry cannot be reached without the opt in.
+
+
+def test_the_inferred_entry_is_not_in_the_sourced_set() -> None:
+    """Separation in the type, not in a note.
+
+    Before issue 112 SCHEDULED_CLOSURE sat inside extends_free_time beside the two
+    entries that are transcribed, with a note explaining it was a guess. A caller
+    reading the set got the guess silently.
+    """
+    assert SCHEDULED not in HAPAG_US.extends_free_time
+    assert SCHEDULED in HAPAG_US.extends_free_time_inferred
+    assert UNSCHEDULED in HAPAG_US.extends_free_time
+
+
+def test_the_inferred_entry_is_unreachable_without_the_opt_in() -> None:
+    """The acceptance criterion, as a reachability test rather than a comment."""
+    assert HAPAG_US.forgives(SCHEDULED) is False
+    assert HAPAG_US.forgives(SCHEDULED, include_inferred=True) is True
+
+
+def test_the_opt_in_does_not_change_the_sourced_entries() -> None:
+    """Opting in adds the guess. It does not quietly widen anything else."""
+    without = HAPAG_US.effective_extends_free_time()
+    with_guess = HAPAG_US.effective_extends_free_time(include_inferred=True)
+    assert with_guess == without | {SCHEDULED}
+    assert without == frozenset({HOLIDAY, UNSCHEDULED})
+
+
+def test_the_opt_in_has_no_bearing_on_the_second_window() -> None:
+    """There is no inferred entry in excluded_after_free_time, and the opt in must
+    not manufacture one."""
+    assert HAPAG_US.forgives(UNSCHEDULED, after_free_time=True) is True
+    assert HAPAG_US.forgives(UNSCHEDULED, after_free_time=True, include_inferred=True) is True
+    assert HAPAG_US.forgives(SCHEDULED, after_free_time=True, include_inferred=True) is False
+
+
+def test_an_inferred_entry_does_not_read_as_unmodelled() -> None:
+    """unmentioned_types means unsaid. An inferred entry is something we said."""
+    assert SCHEDULED not in HAPAG_US.unmentioned_types()
+    assert SCHEDULED in HAPAG_US.effective_extends_free_time(include_inferred=True)
+
+
+def test_every_inferred_entry_is_named_as_unverified_in_the_note() -> None:
+    """The note is kept, but it is now documentation rather than the safeguard."""
+    assert "SCHEDULED_CLOSURE" in HAPAG_US.note
+    assert "inference" in HAPAG_US.note
+    assert "UNVERIFIED" in HAPAG_US.note
+
+
+def test_no_other_carrier_carries_an_inferred_entry() -> None:
+    """So that a future inferred entry has to be added here deliberately."""
+    inferred = {
+        p.name: p.extends_free_time_inferred
+        for p in POLICIES.values()
+        if p.extends_free_time_inferred
+    }
+    assert inferred == {"Hapag-Lloyd US": frozenset({SCHEDULED})}
+
+
+def test_the_production_path_does_not_opt_in() -> None:
+    """freetime.py calls forgives() with no opt in, so the guess is inert in the
+    engine and only a caller who has read the note can reach it."""
+    source = inspect.getsource(freetime)
+    assert "include_inferred" not in source
