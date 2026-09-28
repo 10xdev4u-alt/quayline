@@ -51,7 +51,7 @@ from enum import StrEnum
 
 from quayline.calendars.day_basis import RULES as DAY_BASIS_RULES
 from quayline.calendars.day_basis import DayBasisRule
-from quayline.calendars.holidays import Holiday, federal_holidays
+from quayline.calendars.holidays import FEDERAL_DEFAULT, Holiday, HolidayPolicy
 
 CITATION_HAPAG = (
     "Hapag charges California terminals in working days and every other gateway in "
@@ -86,6 +86,14 @@ class CarrierUnits:
     citation: str
     verified: bool
     terminal_tier_units: tuple[tuple[str, DayUnit], ...] = ()
+    #: Which federal holiday dates close this carrier's gate.
+    #:
+    #: It lives here for the same reason the terminal tiers do. A carrier that works
+    #: federal holidays, or one on a Monday to Saturday workweek where the Saturday
+    #: holiday is the date that bites, is a different fact about that carrier, and a
+    #: global default made both of them a code change. Defaulted so a carrier that has
+    #: not said anything gets the shipped conservative behaviour.
+    holidays: HolidayPolicy = FEDERAL_DEFAULT
 
     def tier_unit_for(self, terminal: str) -> DayUnit:
         for code, unit in self.terminal_tier_units:
@@ -232,8 +240,9 @@ def charge_window(
     # about different things, and a checker that reached for the closure policy to
     # answer the working-week question would get Saturday backwards.
     working_week = basis.basis_for(terminal).working_weekdays()
-    observed = {h.observed_date for h in federal_holidays(first.year)}
-    statutory = {h.statutory_date for h in federal_holidays(first.year)}
+    holidays_closed = units.holidays.dates_closed(first.year) | units.holidays.dates_closed(
+        last.year
+    )
 
     rows: list[DayRow] = []
     for offset in range((last - first).days + 1):
@@ -242,7 +251,7 @@ def charge_window(
         if day in extra_excluded:
             rows.append(DayRow(day, False, "terminal closure"))
             continue
-        if day in observed or day in statutory:
+        if day in holidays_closed:
             rows.append(DayRow(day, False, f"federal holiday, observed {day.isoformat()}"))
             continue
         if unit is DayUnit.CALENDAR:
