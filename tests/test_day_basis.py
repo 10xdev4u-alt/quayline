@@ -1,0 +1,196 @@
+"""The three acceptance criteria on issue 18, one test block each.
+
+Criterion two compares Maersk against Hapag on a Saturday. Maersk's half is
+verbatim from the tariff. Hapag's half is an inference, and a test asserts the
+marker on it, so the comparison ships honestly rather than pretending both sides
+are quoted.
+"""
+
+from __future__ import annotations
+
+import importlib
+from datetime import date
+
+import pytest
+
+from quayline.calendars.day_basis import (
+    HAPAG_US,
+    MAERSK_PRECEDENCE,
+    MAERSK_US,
+    RULES,
+    DayBasis,
+    DayBasisRule,
+    working_day_count,
+)
+
+# A Monday to Sunday week, 2026-06-01 to 2026-06-07.
+MON = date(2026, 6, 1)
+SAT = date(2026, 6, 6)
+SUN = date(2026, 6, 7)
+
+
+# ---------------------------------------------------------------- criterion 1
+# The default calendar is configurable per terminal and per carrier.
+
+
+def test_a_basis_resolves_per_carrier() -> None:
+    assert set(RULES) == {"Maersk", "Hapag-Lloyd"}
+    assert MAERSK_US.default is DayBasis.MONDAY_SATURDAY
+    assert HAPAG_US.default is DayBasis.MONDAY_FRIDAY
+
+
+def test_a_basis_resolves_per_terminal_overriding_the_carrier_default() -> None:
+    """Terminal first, carrier second.
+
+    A single carrier does not use one basis at every terminal. Hapag charges
+    California terminals in working days and Savannah in calendar days, from the
+    same table, and the difference is invisible unless you read the day-unit column.
+    """
+    assert HAPAG_US.basis_for("USSAVNG") is DayBasis.CALENDAR
+    assert HAPAG_US.basis_for("USLAXB") is DayBasis.MONDAY_FRIDAY
+    assert HAPAG_US.basis_for("UNKN") is DayBasis.MONDAY_FRIDAY, "unknown falls back"
+
+
+def test_the_default_applies_to_a_terminal_nobody_told_us_about() -> None:
+    assert MAERSK_US.basis_for("ANYTHING") is DayBasis.MONDAY_SATURDAY
+
+
+def test_a_terminal_override_changes_the_working_day_count() -> None:
+    assert working_day_count(HAPAG_US, MON, SUN) == 5
+    assert working_day_count(HAPAG_US, MON, SUN, "USSAVNG") == 7, "calendar counts all seven"
+
+
+def test_calendar_basis_has_no_weekly_closures() -> None:
+    """So a caller cannot treat CALENDAR as a weekday set and be surprised."""
+    assert DayBasis.CALENDAR.working_weekdays() == frozenset(range(7))
+    assert DayBasis.CALENDAR.weekly_closures() == frozenset()
+    assert DayBasis.MONDAY_SATURDAY.weekly_closures() == frozenset({6})
+    assert DayBasis.MONDAY_FRIDAY.weekly_closures() == frozenset({5, 6})
+
+
+# ---------------------------------------------------------------- criterion 2
+# Saturday is a working day under the Maersk basis and a closure day under the
+# Hapag basis.
+
+
+def test_saturday_is_a_working_day_under_maersk() -> None:
+    assert SAT.weekday() == 5
+    assert MAERSK_US.is_working_day(SAT) is True
+    assert MAERSK_US.weekly_closure_on(SAT) is False
+    assert MAERSK_US.is_working_day(SUN) is False, "Sunday is the only weekly closure"
+
+
+def test_saturday_is_a_closure_day_under_hapag() -> None:
+    assert HAPAG_US.is_working_day(SAT) is False
+    assert HAPAG_US.weekly_closure_on(SAT) is True
+
+
+def test_the_same_week_counts_differ_by_one() -> None:
+    """The day count that lands on an invoice, stated as an assertion."""
+    assert working_day_count(MAERSK_US, MON, SUN) == 6
+    assert working_day_count(HAPAG_US, MON, SUN) == 5
+    assert working_day_count(MAERSK_US, MON, SUN) - working_day_count(HAPAG_US, MON, SUN) == 1
+
+
+def test_the_maersk_half_of_criterion_two_is_quoted_and_the_hapag_half_is_not() -> None:
+    """The honesty of this specific test, asserted.
+
+    Maersk's basis is verbatim from its tariff. Hapag's is inferred from the
+    denominator being working days plus practice, and no Hapag clause defining a
+    working week has been transcribed. The criterion asks for a comparison, so the
+    comparison ships, and both halves are labelled for what they are.
+    """
+    assert MAERSK_US.verified is True
+    assert "Monday - Saturday" in MAERSK_US.citation
+    assert "Working Day basis defined as any day a gate is open" in MAERSK_US.citation
+
+    assert HAPAG_US.verified is False
+    assert HAPAG_US.citation.startswith("UNVERIFIED:")
+    assert "no Hapag clause stating a working week" in HAPAG_US.citation
+    assert "inferred" in HAPAG_US.citation
+
+
+def test_a_monday_to_friday_default_would_be_wrong_for_maersk() -> None:
+    """The problem statement, as a test.
+
+    Defaulting to Monday to Friday produces a day count that is one short on every
+    Saturday dispute, and an invoice that looks reasonable.
+    """
+    assert working_day_count(MAERSK_US, MON, SUN) != working_day_count(
+        DayBasisRule(
+            carrier="wrong default",
+            default=DayBasis.MONDAY_FRIDAY,
+            source="test",
+            citation="test",
+            verified=True,
+        ),
+        MON,
+        SUN,
+    )
+
+
+def test_the_working_day_count_rejects_a_reversed_range() -> None:
+    with pytest.raises(ValueError, match="precedes"):
+        working_day_count(MAERSK_US, SUN, MON)
+
+
+# ---------------------------------------------------------------- criterion 3
+# The tariff module documents that the published PDF disclaims itself and that the
+# tariff prevails.
+
+
+def test_maersk_precedence_is_quoted_verbatim() -> None:
+    assert MAERSK_PRECEDENCE == (
+        "In the event of any discrepancies between the below and our public tariff, the "
+        "public tariff prevails."
+    )
+
+
+def test_the_module_docstring_says_the_tariff_beats_this_module() -> None:
+    """Asserted on the docstring, because it is the caveat most likely to be lost.
+
+    The sentence is the carrier telling you its summary sheet loses to its tariff. It
+    applies with more force to a transcription of that tariff, which is what every
+    module in this package is. A dispute turns on the working week, so quote the
+    tariff, not us and not the research corpus.
+    """
+    raw = importlib.import_module("quayline.calendars.day_basis").__doc__ or ""
+    # Collapse whitespace before asserting. A phrase split across a docstring line
+    # break is still a phrase, and a test that fails on a rewrap trains people to
+    # stop reading the test.
+    text = " ".join(raw.split())
+    assert "public tariff prevails" in text
+    assert "quote the tariff" in text.lower()
+    assert "never quote our research corpus" in text
+
+
+def test_every_rule_carries_a_citation_and_a_marker() -> None:
+    for rule in RULES.values():
+        assert rule.citation
+        assert rule.source
+        assert isinstance(rule.verified, bool)
+        if not rule.verified:
+            assert rule.citation.startswith("UNVERIFIED:"), rule.carrier
+
+
+def test_the_hapag_terminal_overrides_are_day_units_not_working_weeks() -> None:
+    """The module says the override enum is not yet the right place for #9.
+
+    Hapag's terminals differ in whether post free time is billed in working or
+    calendar days. That is issue 9, and using DayBasis for it would overload a field
+    that means something narrower.
+    """
+    assert "issue 9" in HAPAG_US.note.lower()
+    assert HAPAG_US.basis_for("USSAVNG") is DayBasis.CALENDAR
+    assert HAPAG_US.basis_for("USLAXB") is not DayBasis.CALENDAR
+
+
+def test_rules_are_hashable_and_genuinely_immutable() -> None:
+    """The first version of this type held overrides in a dict and could not be
+    hashed, which is mypy telling me a frozen dataclass with a dict is not frozen."""
+    assert len({MAERSK_US, HAPAG_US}) == 2
+    with pytest.raises(AttributeError):
+        MAERSK_US.default = DayBasis.MONDAY_FRIDAY  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        MAERSK_US.terminal_overrides = ()  # type: ignore[misc]
+    assert isinstance(MAERSK_US.terminal_overrides, tuple)
