@@ -32,11 +32,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from quayline.engine.settings import TOLERANCE as SETTINGS_TOLERANCE
 from quayline.models.invoice import CITE_RATE_RULE, CITE_RATES, CITE_TOTAL
 from quayline.tariffs.blocks import RateBlock, Tier
 
-# ESTIMATE, ours, not sourced. See the module docstring.
-TOLERANCE = Decimal("0.02")
+# The shipped band. It lives in config/audit.json because it is a decision about
+# filing aggression and not a fact about pricing, and a constant here would read as
+# the latter. The parameter below still takes an override for testing.
+TOLERANCE = SETTINGS_TOLERANCE.fraction
 
 
 @dataclass(frozen=True, slots=True)
