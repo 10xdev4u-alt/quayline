@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +24,8 @@ from quayline.engine.amount import (
     AmountResult,
     compare,
 )
+from quayline.engine.settings import CONFIG_PATH, SettingsError, load_tolerance
+from quayline.engine.settings import TOLERANCE as SETTINGS
 from quayline.models.invoice import CITE_CHARGED_DATES, CITE_FREE_TIME_START
 from quayline.tariffs.blocks import RateBlock, Tier, TierError
 from quayline.tariffs.registry import Registry, UnresolvedRuleError
@@ -318,3 +322,108 @@ def test_the_timing_module_supplies_the_day_count_not_the_date_set() -> None:
     assert CITE_FREE_TIME_START == "541.6(b)(4)"
     assert CITE_RATE_RULE == "541.6(c)(2)"
     assert CITE_TOTAL == "541.6(c)(1)"
+
+
+# ------------------------------------------------------- issue 110, tolerance config
+# The band is a decision about filing aggression, not a fact about pricing.
+
+
+def test_the_band_comes_from_the_shipped_config_not_from_engine_code() -> None:
+
+    assert CONFIG_PATH.exists()
+    assert CONFIG_PATH.name == "audit.json"
+    assert SETTINGS.origin.endswith("audit.json")
+    assert SETTINGS.fraction == TOLERANCE, "the engine constant must be the config value"
+
+
+def test_the_config_labels_the_value_a_default_and_not_a_finding() -> None:
+    """Asserted on the file, because that is where a future edit will land."""
+    raw = json.loads(CONFIG_PATH.read_text())
+    block = raw["tolerance"]
+    assert block["$comment"].startswith("ESTIMATE")
+    assert "no source" in block["$comment"]
+    assert block["$default_is_not_a_finding"] is True
+    assert "$why" in block and "$trade_off" in block
+
+
+def test_the_config_states_the_trade_off_in_both_directions() -> None:
+    """A setting that only records the reason it was raised reads as settled."""
+    raw = json.loads(CONFIG_PATH.read_text())
+    assert "wins less" in raw["tolerance"]["$trade_off"]
+    assert "gets ignored" in raw["tolerance"]["$trade_off"]
+    assert "demand" in raw["tolerance"]["applied_to"]
+
+
+def test_the_config_value_is_a_string_so_the_decimal_is_exact() -> None:
+    """A float here would be a band nobody chose.
+
+    0.02 as a float is not 2 percent, and the difference is small enough to look
+    like a rounding artefact on an invoice and large enough to flip a finding that
+    sits exactly on the band.
+    """
+    raw = json.loads(CONFIG_PATH.read_text())
+    assert isinstance(raw["tolerance"]["default_fraction"], str)
+    assert Decimal(raw["tolerance"]["default_fraction"]) == TOLERANCE
+
+
+def test_an_explicit_override_still_wins_for_testing() -> None:
+    """The engine stays pure. Config is where a shipped default lives, not a
+    dependency of every comparison."""
+    block = maersk_block()
+    strict = compare(block, 6, D("1900.00"), tolerance=Decimal("0"))
+    assert strict.within_tolerance is False
+    assert strict.overbilled is True
+    assert compare(block, 6, D("1890.00"), tolerance=Decimal("0")).within_tolerance is True
+
+
+def test_a_missing_config_raises_rather_than_falling_back() -> None:
+    """The fallback would put the constant straight back.
+
+    A config that cannot be read has to stop the engine, because the alternative
+    is filing on a band nobody chose while the code claims the band is configured.
+    """
+
+    with pytest.raises(SettingsError, match="no safe fallback"):
+        load_tolerance(Path("/nonexistent/audit.json"))
+
+
+def test_a_malformed_config_raises(tmp_path: Path) -> None:
+    """Temp files go through tmp_path, not a hardcoded path.
+
+    A test writing to a fixed path in /tmp is a test that collides with every
+    parallel run and leaves files behind for the next one to trip over.
+    """
+
+    bad = tmp_path / "bad.json"
+    bad.write_text("{ not json")
+    with pytest.raises(SettingsError, match="not valid JSON"):
+        load_tolerance(bad)
+
+    wrong_type = tmp_path / "wrong-type.json"
+    wrong_type.write_text(json.dumps({"tolerance": {"default_fraction": 0.02}}))
+    with pytest.raises(SettingsError, match="must be a string"):
+        load_tolerance(wrong_type)
+
+    missing_block = tmp_path / "missing.json"
+    missing_block.write_text(json.dumps({"something_else": 1}))
+    with pytest.raises(SettingsError):
+        load_tolerance(missing_block)
+
+
+def test_a_band_of_one_or_more_is_refused(tmp_path: Path) -> None:
+    """A band of 1 forgives every charge, which is not a tolerance."""
+
+    huge = tmp_path / "huge.json"
+    huge.write_text(json.dumps({"tolerance": {"default_fraction": "1.0"}}))
+    with pytest.raises(SettingsError, match="under 1"):
+        load_tolerance(huge)
+
+    negative = tmp_path / "negative.json"
+    negative.write_text(json.dumps({"tolerance": {"default_fraction": "-0.01"}}))
+    with pytest.raises(SettingsError, match="at least 0"):
+        load_tolerance(negative)
+
+
+def test_the_letter_reports_the_configured_band_not_a_hardcoded_string() -> None:
+    result = compare(maersk_block(), 6, D("2400.00"))
+    assert f"the {TOLERANCE:.0%} tolerance band" in "\n".join(result.as_letter_lines())

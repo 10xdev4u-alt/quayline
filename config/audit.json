@@ -1,0 +1,12 @@
+{
+  "$schema_note": "Operator settings for the audit engine, reviewed like branch protection. Anything in here is OUR JUDGEMENT unless the block it sits in says otherwise, and a value with no source is a value that changes what gets filed. Read the $comment on a block before changing it.",
+
+  "tolerance": {
+    "$comment": "ESTIMATE, ours, not sourced from any carrier, tariff or statute. This is the only number in the repository with no source behind it and it is deliberately visible here rather than buried in engine code.",
+    "$why": "A dispute filed over a rounding difference costs more to pursue than it recovers. A carrier shown five cents of noise ignores the letter containing it, and that letter is also the one that finds the four thousand eight hundred. The band exists to stop us filing noise, not to soften a finding.",
+    "$trade_off": "A wider band files more and wins less. A narrower band wins more and gets ignored. The right number is a commercial judgement about filing behaviour, not a fact about demurrage, and the review of issue 30 concluded it does not belong in engine code.",
+    "$default_is_not_a_finding": true,
+    "default_fraction": "0.02",
+    "applied_to": "the demand, not the recomputed total, so the band is a fixed fraction of money rather than a fraction of a day count that varies with the tier structure"
+  }
+}
