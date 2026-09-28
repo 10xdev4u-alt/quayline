@@ -178,12 +178,22 @@ CMA_CGM_US_CALIFORNIA = ClosurePolicy(
     verified=False,
 )
 
+# Keyed by the carrier names the day basis and charge window modules use, because
+# "Hapag-Lloyd US" and "Hapag-Lloyd" being different strings is a lookup that fails
+# silently at the worst moment.
+CLOSURE_POLICY_FOR: dict[str, ClosurePolicy] = {
+    "Hapag-Lloyd": HAPAG_US,
+    "Maersk": MAERSK_US,
+    "CMA CGM": CMA_CGM_US_CALIFORNIA,
+}
+
 POLICIES: dict[str, ClosurePolicy] = {
     p.name: p for p in (HAPAG_US, MAERSK_US, CMA_CGM_US_CALIFORNIA)
 }
 
 __all__ = [
     "ALL_CLOSURE_TYPES",
+    "CLOSURE_POLICY_FOR",
     "CMA_CGM_US_CALIFORNIA",
     "HAPAG_US",
     "MAERSK_US",
