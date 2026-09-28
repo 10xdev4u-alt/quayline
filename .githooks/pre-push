@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Issue 121: part of making .githooks a complete core.hooksPath.
+#
+# Delegates to the pre-commit CLI, which is where the rules for this stage live
+# (.pre-commit-config.yaml). Deliberately no logic here: a hook with rules in it is
+# a hook nobody tests.
+#
+# Exists so that pointing core.hooksPath at .githooks gives the same enforcement as
+# the default installation, rather than quietly less. A hooksPath that only
+# implements one of three stages is a trap for the next person who sets it.
+
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(dirname "$HERE")"
+VENV_PYTHON="$ROOT/.venv/bin/python"
+
+if [ -x "$VENV_PYTHON" ]; then
+    exec "$VENV_PYTHON" -mpre_commit hook-impl \
+        --config="$ROOT/.pre-commit-config.yaml" --hook-type=pre-push \
+        --hook-dir "$HERE" -- "$@"
+elif command -v pre-commit > /dev/null; then
+    exec pre-commit hook-impl \
+        --config="$ROOT/.pre-commit-config.yaml" --hook-type=pre-push \
+        --hook-dir "$HERE" -- "$@"
+else
+    echo "pre-commit not found. Did you forget to activate the virtualenv?" 1>&2
+    exit 1
+fi

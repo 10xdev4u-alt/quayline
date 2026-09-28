@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Issue 121: the shim that makes .githooks a usable core.hooksPath.
+#
+# Without this file, pointing core.hooksPath at .githooks finds no hook named
+# commit-msg, git runs nothing, and the check silently stops running while still
+# exiting 0. That is what happened for an entire working session, and it is the
+# worst shape a control can have: it looks like enforcement and enforces nothing.
+#
+# This shim is deliberately thin. The rule lives in check_commit_msg.py, which is
+# testable without a git repository. A hook with logic in it is a hook nobody
+# tests.
+#
+# It is not executable-by-accident. If the execute bit is lost, git skips it and we
+# are back to the original failure, so a test asserts the mode.
+
+set -euo pipefail
+exec python3 "$(dirname "$0")/check_commit_msg.py" "$1"
