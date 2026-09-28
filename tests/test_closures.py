@@ -87,7 +87,12 @@ def test_no_policy_field_is_a_bool() -> None:
             "source",
             "citation",
             "verified",
+            "note",
         }
+        # note is provenance about a doubtful entry, added when freetime.py turned out
+        # to be the first module that actually exercises this policy. It is a string and
+        # is entitled to be; the prohibition is on the rule being a flag.
+        assert isinstance(policy.note, str)
 
 
 def test_the_two_windows_differ_for_hapag() -> None:
