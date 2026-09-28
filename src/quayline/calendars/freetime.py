@@ -54,7 +54,8 @@ from enum import StrEnum
 from quayline.calendars.closures import CLOSURE_POLICY_FOR, ClosurePolicy, ClosureType
 from quayline.calendars.day_basis import RULES as DAY_BASIS_RULES
 from quayline.calendars.day_basis import DayBasisRule
-from quayline.calendars.holidays import federal_holidays
+from quayline.calendars.holidays import HolidayPolicy
+from quayline.calendars.window import UNITS as CARRIER_UNITS
 
 CARRIER_HAPAG = "Hapag-Lloyd"
 CARRIER_MAERSK = "Maersk"
@@ -118,19 +119,15 @@ class FreeTimeResult:
         return "\n".join(lines)
 
 
-def _holidays_for(year: int) -> dict[date, ClosureType]:
-    """Both the observed and the statutory date of every federal holiday.
+def _holidays_for(year: int, policy: HolidayPolicy) -> dict[date, ClosureType]:
+    """The dates this carrier treats as closed, per its own holiday policy.
 
-    A Monday to Friday workweek observes a Saturday holiday on the Friday, so the
-    observed date is the one the gate is shut. A carrier working Monday to Saturday
-    has the Saturday as a working day, so the statutory date is the one that bites.
-    Carrying both means the caller does not have to know which regime it is in.
+    Which dates those are is the carrier's business and the policy says so. Before
+    this was a parameter, the walk excluded both dates of every federal holiday at
+    every terminal, which is a defensible default and not a fact about any carrier we
+    hold, and a terminal that works a federal holiday billed it.
     """
-    out: dict[date, ClosureType] = {}
-    for holiday in federal_holidays(year):
-        out[holiday.observed_date] = ClosureType.HOLIDAY
-        out.setdefault(holiday.statutory_date, ClosureType.HOLIDAY)
-    return out
+    return dict.fromkeys(policy.dates_closed(year), ClosureType.HOLIDAY)
 
 
 def free_time(
@@ -159,9 +156,10 @@ def free_time(
     working_week = basis.basis_for(terminal).working_weekdays()
 
     # Two years of holidays, because a December start walks into January.
+    holiday_policy = CARRIER_UNITS[carrier].holidays
     holidays: dict[date, ClosureType] = {}
     for year in range(start.year, start.year + 2):
-        holidays.update(_holidays_for(year))
+        holidays.update(_holidays_for(year, holiday_policy))
     injected = dict(extra_closures)
 
     notes: list[DayNote] = []

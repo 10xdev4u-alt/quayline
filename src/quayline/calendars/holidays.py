@@ -285,13 +285,18 @@ class TerminalClosures:
 
 __all__ = [
     "CITATION",
+    "FEDERAL_DEFAULT",
     "HOLIDAY_COUNT",
     "MONDAY_TO_SATURDAY_EXCLUSION",
     "MONTHS",
     "NON_MONDAY_FRIDAY_RULE",
     "RULES",
     "SOURCE",
+    "UNVERIFIED_NOTE",
+    "WORKS_FEDERAL_HOLIDAYS",
     "Holiday",
+    "HolidayPolicy",
+    "HolidayScope",
     "ObservedHoliday",
     "Rule",
     "TerminalClosures",
@@ -300,3 +305,99 @@ __all__ = [
     "observed",
     "statutory_date",
 ]
+
+
+# ---------------------------------------------------------------- which holidays close a gate
+
+
+class HolidayScope(StrEnum):
+    """Which dates a carrier treats as closed, for a given carrier and workweek.
+
+    Two dates exist for every federal holiday and they are not interchangeable. A
+    Saturday holiday is observed on the Friday, and a Monday to Friday workweek has
+    the gate shut on the Friday. A Monday to Saturday workweek has Saturday as a
+    working day, so the Saturday itself is the date that bites.
+
+    So a policy has to say which of them it is honouring, and it can differ between
+    two carriers with the same workweek once a service contract says so.
+    """
+
+    #: Both the observed and the statutory date close the gate. The shipped default,
+    #: and the conservative one, because it excludes more.
+    FEDERAL_BOTH = "federal_both"
+    #: Only the observed date. The literal reading of "the day the holiday is taken".
+    FEDERAL_OBSERVED = "federal_observed"
+    #: No federal holiday closes the gate. A terminal that works them bills them, and
+    #: before this existed the only way to say that was to edit the calendar module.
+    NONE = "none"
+
+
+@dataclass(frozen=True, slots=True)
+class HolidayPolicy:
+    """A carrier's holiday practice, with its provenance.
+
+    UNVERIFIED for every carrier we hold, and marked rather than assumed. Terminal
+    hours are not a federal matter. 5 U.S.C. 6103 does not reach a marine terminal,
+    a carrier's tariff says "bank holiday" without enumerating, and the only
+    authority on whether a gate was shut on the 4th of July is the terminal that owns
+    the building.
+
+    So this is a defensible default, held on the carrier record where it can be
+    changed when somebody reads a tariff, rather than a global assumption buried in
+    the day counting where it looked like a fact.
+    """
+
+    scope: HolidayScope
+    source: str
+    verified: bool
+    note: str = ""
+
+    def dates_closed(self, year: int) -> frozenset[date]:
+        """The dates this policy treats as closed in a year."""
+        if self.scope is HolidayScope.NONE:
+            return frozenset()
+        observed_dates = {h.observed_date for h in federal_holidays(year)}
+        if self.scope is HolidayScope.FEDERAL_OBSERVED:
+            return frozenset(observed_dates)
+        statutory = {h.statutory_date for h in federal_holidays(year)}
+        return frozenset(observed_dates | statutory)
+
+    def covers(self, day: date) -> bool:
+        if self.scope is HolidayScope.NONE:
+            return False
+        holidays = federal_holidays(day.year)
+        if self.scope is HolidayScope.FEDERAL_OBSERVED:
+            return day in {h.observed_date for h in holidays}
+        return day in {h.observed_date for h in holidays} | {h.statutory_date for h in holidays}
+
+
+UNVERIFIED_NOTE = (
+    "UNVERIFIED: no carrier's holiday practice has been transcribed. Terminal hours are "
+    "not a federal matter, 5 U.S.C. 6103 does not reach a marine terminal, and the "
+    "carrier tariffs say 'bank holiday' without enumerating. The scope here is a "
+    "defensible default and the terminal's own published hours are the fact."
+)
+
+# The shipped default. Both dates, because excluding more is the conservative
+# direction: a day wrongly believed to be free produces an underbilled finding, which
+# costs the customer nothing, while a day wrongly believed to be chargeable produces
+# an overbilled finding, which costs credibility.
+FEDERAL_DEFAULT = HolidayPolicy(
+    scope=HolidayScope.FEDERAL_BOTH,
+    source="no carrier source, this is a default. See UNVERIFIED_NOTE",
+    verified=False,
+    note=UNVERIFIED_NOTE,
+)
+
+# A carrier that works federal holidays. Not held for any carrier we know of, and
+# present so that the case is expressible rather than requiring a code change when
+# somebody reads a tariff that says so.
+WORKS_FEDERAL_HOLIDAYS = HolidayPolicy(
+    scope=HolidayScope.NONE,
+    source="expressible case, not held for any carrier",
+    verified=False,
+    note=(
+        "UNVERIFIED and not held. Present so a carrier or a terminal that works federal "
+        "holidays can be expressed without editing the calendar."
+    ),
+)
