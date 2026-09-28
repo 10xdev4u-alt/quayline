@@ -25,6 +25,12 @@ CITE_AVAILABILITY = "541.6(b)(6)"
 CITE_RETURN_DATE = "541.6(b)(7)"
 CITE_CHARGED_DATES = "541.6(b)(8)"
 
+# The three rate disclosures, 541.6(c), which issue 30 turns into money. The
+# clause text itself lives in the checklist module, verified in issue 1.
+CITE_TOTAL = "541.6(c)(1)"
+CITE_RATE_RULE = "541.6(c)(2)"
+CITE_RATES = "541.6(c)(3)"
+
 # The five fields a day count cannot be recomputed without, mapped to their cites.
 # Kept as a table so the engine can quote a clause for every field it relies on and
 # a test can assert no field is missing from it.
@@ -95,7 +101,10 @@ __all__ = [
     "CITE_CHARGED_DATES",
     "CITE_FREE_TIME_END",
     "CITE_FREE_TIME_START",
+    "CITE_RATES",
+    "CITE_RATE_RULE",
     "CITE_RETURN_DATE",
+    "CITE_TOTAL",
     "REQUIRED_FOR_RECOMPUTATION",
     "TimingDisclosures",
 ]
