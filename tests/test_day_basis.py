@@ -9,7 +9,7 @@ are quoted.
 from __future__ import annotations
 
 import importlib
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -127,6 +127,45 @@ def test_a_monday_to_friday_default_would_be_wrong_for_maersk() -> None:
         MON,
         SUN,
     )
+
+
+@pytest.mark.parametrize(
+    ("day", "expected_maersk", "expected_hapag"),
+    [
+        (date(2026, 6, 1), 1, 1),  # Monday
+        (date(2026, 6, 5), 1, 1),  # Friday
+        (SAT, 1, 0),  # Saturday
+        (SUN, 0, 0),  # Sunday
+    ],
+)
+def test_single_days_are_counted_individually(
+    day: date, expected_maersk: int, expected_hapag: int
+) -> None:
+    """One day at a time, which is the only way a one-day rotation gets caught.
+
+    A whole-week total could not catch it. The first version of working_day_count
+    labelled every day as the next day of the week, so Saturday was excluded and
+    Sunday counted instead, and Monday to Saturday still came to six. The test that
+    asserted six against five passed for entirely the wrong reason.
+
+    Any count of a span is only trustworthy if the single days inside it are
+    trustworthy, and a rotation by one preserves the total whenever the span covers
+    a whole number of weeks.
+    """
+    assert working_day_count(MAERSK_US, day, day) == expected_maersk
+    assert working_day_count(HAPAG_US, day, day) == expected_hapag
+
+
+def test_a_whole_week_total_is_the_sum_of_its_days() -> None:
+    """So a total can be checked against its parts rather than trusted on its own."""
+    for start in (date(2026, 6, 1), date(2026, 6, 2), date(2026, 6, 3), date(2026, 6, 4)):
+        week_end = start + timedelta(days=6)
+        for rule in (MAERSK_US, HAPAG_US):
+            parts = sum(
+                working_day_count(rule, start + timedelta(days=i), start + timedelta(days=i))
+                for i in range(7)
+            )
+            assert working_day_count(rule, start, week_end) == parts, (rule.carrier, start)
 
 
 def test_the_working_day_count_rejects_a_reversed_range() -> None:

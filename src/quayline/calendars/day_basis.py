@@ -37,7 +37,7 @@ hours. Do not quote this module, and never quote our research corpus.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 
 from quayline.calendars.closures import ClosureType
@@ -178,10 +178,17 @@ def working_day_count(rule: DayBasisRule, first: date, last: date, terminal: str
     if last < first:
         raise ValueError(f"last {last} precedes first {first}")
     working = rule.basis_for(terminal).working_weekdays()
+    span = (last - first).days
+    # Ask date for its own weekday rather than taking toordinal() % 7.
+    #
+    # date.toordinal() is 1-based and date.weekday() is 0=Monday, so the two differ
+    # by one and ordinal % 7 labels every day as the next day of the week. The
+    # first version of this function did that, which excluded Saturday and counted
+    # Sunday instead. A whole week total still came to six, because one error
+    # replaced the other, and a test asserting only the total passed for entirely
+    # the wrong reason.
     return sum(
-        1
-        for offset in range((last - first).days + 1)
-        if (first.toordinal() + offset) % 7 in working
+        1 for offset in range(span + 1) if (first + timedelta(days=offset)).weekday() in working
     )
 
 
