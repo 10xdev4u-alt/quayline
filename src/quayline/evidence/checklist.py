@@ -77,6 +77,12 @@ class Ground(StrEnum):
     "contract condition and government hold" is a real pairing.
     """
 
+    #: Not a factual cause. A ground for the case where the carrier did not make a
+    #: disclosure 541.6 requires, which is why the remedy is automatic and the
+    #: packet files it without evidence. It lives here rather than in packet.py so
+    #: that a claim on it and a claim on a factual ground cannot collide, which is
+    #: not a distinction one can make at a call site.
+    DISCLOSURE_OMITTED = "disclosure omitted"
     CONTRACT_CONDITION = "contract condition"
     APPOINTMENT_UNAVAILABLE = "appointment unavailable"
     GOVERNMENT_HOLD = "government hold"
