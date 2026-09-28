@@ -87,6 +87,7 @@ class ClosurePolicy:
     source: str
     citation: str
     verified: bool
+    note: str = ""
 
     def forgives(self, closure: ClosureType, *, after_free_time: bool = False) -> bool:
         """Whether this carrier does not charge for a day of this kind.
@@ -133,6 +134,15 @@ HAPAG_US = ClosurePolicy(
         "assessments."
     ),
     verified=True,
+    note=(
+        "UNVERIFIED entry: SCHEDULED_CLOSURE is in extends_free_time by inference, not "
+        "from a transcribed clause. The evidence we hold names bank holidays and shutout "
+        "days, and in Hapag's own vocabulary a shutout is an UNSCHEDULED closure, so the "
+        "sourced reading would be {HOLIDAY, UNSCHEDULED_SHUTOUT} and a scheduled closure "
+        "would consume an allowance day. Found by freetime.py, the first module that "
+        "actually exercises this policy. Either reading is defensible and the clause "
+        "that settles it has not been transcribed."
+    ),
 )
 
 # Verbatim from the Maersk tariff working day definition:
