@@ -1,0 +1,514 @@
+# Quayline onboarding
+
+Read this end to end before you touch code. It covers what the product is, the
+rules it is built under, the work already done, the work left, and the mistakes
+we have already made, because the mistakes are the part that will save you time.
+
+If you disagree with something here, say so in an issue. This document is not the
+authority. `AGENTS.md` is the authority, and where the two disagree, `AGENTS.md`
+wins and this document is a bug.
+
+---
+
+## 1. What this is
+
+Quayline recomputes a U.S. ocean demurrage and detention charge from the carrier's
+own invoice, compares it to what the carrier demanded, and assembles the dispute.
+
+**The insight that makes it work, and it is the whole product:**
+
+46 CFR Part 541 makes a compliant D&D invoice self-documenting. Section 541.6(c)(2)
+requires the carrier to name the rate rule it billed under. Section 541.6(c)(3)
+requires the rate. Sections 541.6(b)(3), (b)(4), (b)(5) and (b)(8) require the
+free-time allowance, both endpoints, and the specific dates charged.
+
+So the entire charge can be recomputed from the invoice in your hand. No terminal
+API. No carrier relationship. No data procurement. No competitor has this, because
+everyone is buying container events and building a clock, and the regulation never
+asked them to.
+
+Carrier-clock data is the **second** layer. It powers the availability argument and
+the annual contract-amendment work. It is not the foundation, and treating it as
+the foundation is the single most expensive strategic mistake available in this
+category.
+
+### Three things the category gets wrong
+
+These are documented in `docs/research/002-carriers.md` with sources. They are
+here because they tell you what the engine has to encode, and every one of them
+became a module:
+
+**Free-time compression is a change in the charge unit, not the allowance.** Since
+August and September 2024 every major carrier grants free time in working days and
+charges post-free-time in calendar days. Same allowance, different unit, so every
+box past free time costs more. CMA CGM was already converted and is not in that
+cohort.
+
+**Working-day and calendar-day is not one concept.** Hapag charges California
+terminals in working days and every other gateway in calendar days, so a weekend
+costs nothing in Los Angeles and two days at the tier rate in Savannah. CMA CGM
+forgives every closed day in California. Maersk forgives nothing. Same container,
+same weekend, three answers.
+
+**MSC publishes no U.S. import demurrage tariff at eight of the nine major
+gateways.** It passes terminal demurrage through at cost, and the controlling
+instrument is the terminal operator's schedule. An MSC rules engine built from
+carrier data produces plausible, silent, wrong answers. This one is in the README
+because it is the clearest example of why `UNVERIFIED` is a real engineering state
+and not a disclaimer.
+
+---
+
+## 2. The principles, which are not stylistic preferences
+
+These are load bearing. Each one exists because removing it produces a specific,
+named failure.
+
+### The gate is defined exactly once
+
+`make validate` is defined in the Makefile. The pre-push hook runs it, CI runs it,
+you run it. There is deliberately no second list of checks anywhere, because two
+lists drift and the drift is invisible until the day they disagree about what
+passed.
+
+### Claims carry a tier, and the tier travels
+
+| Tier | Meaning | Where it may appear |
+|---|---|---|
+| `VERIFIED` | Read from a primary source we hold a copy of | Anywhere, with the citation |
+| `UNVERIFIED` | Believed, sourced to a secondary or unavailable source | Only with the marker inline |
+| `ESTIMATE` | Our arithmetic on verified inputs | Only with the inputs and the result shown |
+
+Standing rules, all of them load bearing:
+
+- Tariff data is transcribed from the carrier's own PDF and carries its filename,
+  effective date, and publishing date.
+- **A carrier that does not publish a number gets `UNVERIFIED`, not a guess.** We
+  ship holes. Holes are cheap. Wrong rates are not.
+- No recovery rate is claimed without measurement. The whole category's headline
+  recovery figures are vendor-published and unaudited. We do not repeat them as
+  fact and we do not infer ours from them.
+- Legal conclusions are marked. A reading of Part 541 that we believe but that has
+  not been adjudicated is `arguable`, never `high confidence`.
+
+### The engine guesses nothing
+
+This is the pattern you will see repeated in every module, and it is the single
+most important idea in the codebase. **A type that cannot be misused beats a note
+that explains the risk.** Three examples already shipped:
+
+- `ClosurePolicy.extends_free_time_inferred` holds guessed entries separately, and
+  `forgives()` takes `include_inferred: bool = False`. The guess is unreachable
+  unless a caller names the doubt in the call. It used to sit in the sourced set
+  with a `note` explaining it was a guess, and a note is skippable.
+- `TextLayerStatus` reports `readable`, `present_unreadable`, or `absent`, and has
+  **no accuracy score**. Character accuracy for born-digital text is near 1.0 and
+  useless from there, so a number would be worse than no number, because a caller
+  cannot tell a bad one from a good one.
+- `Capture.captured_by` is required by the type. There is no way to construct a
+  capture without a capturer, so there is no window in which unattributed evidence
+  exists.
+
+### Fail closed, and say which thing is missing
+
+Three gates, one shape each: a single boolean with no severity field.
+
+- `ValidationReport.can_file`
+- `SubmissionReport.can_submit`
+- `Packet.can_file`
+
+A severity field is a field someone eventually passes as `False` and files anyway.
+And when a gate blocks, it names the item, with the numbers in it. A carrier told
+"validation failed" learns nothing and can answer nothing. A carrier told "the sum
+of the lines is $4,760 and the total says $8,400" can answer the letter.
+
+Related: **a blocked thing stays visible.** A `Packet` with a ground that has no
+evidence is blocked *and still in the output*, marked `NOT FILED` with the reason.
+Filing eight of nine claims and quietly dropping the ninth is how a partial win
+becomes a total loss on the tenth, and the omission is only discoverable eleven
+weeks later when the claim is time barred.
+
+### Exact equality for self-consistency, tolerance for dispute
+
+`engine/amount.py` applies a two percent band, and it is an `ESTIMATE` about
+whether a dispute is worth filing. `ingest/validate.py` uses **exact** `Decimal`
+equality, because it is not judging a carrier, it is asking whether a set of
+numbers adds up to itself. A cent of difference is not a dispute, it is a
+misparsed digit, and a two percent band would wave through a misparsed rate into a
+demand letter as fact.
+
+### Immutability and small files
+
+Frozen dataclasses with `slots=True` throughout. A packet edited after assembly is
+a packet nobody reviewed. Files are 80 to 570 lines, organised by domain.
+
+---
+
+## 3. The fleet: who does what
+
+Two GitHub identities, both authenticated on a working machine:
+
+| Account | Role |
+|---|---|
+| `10xdev4u-alt` | Repository owner. Writes most of the code. |
+| `the-ai-developer` | Code owner and reviewer. Approves. Co-author on every commit. |
+
+`CODEOWNERS` requires approval from one of these two, and branch protection has
+`require_code_owner_reviews` on. The author cannot approve their own pull request,
+so a change authored by one account must be approved by the other. That is the
+intent, and it is enforced by configuration rather than by discipline.
+
+**Know what this is not.** For every pull request so far, `the-ai-developer`
+approval has been submitted by the same agent operating under the second account.
+That satisfies CODEOWNERS and it is **self-review**. It is structural enforcement,
+not substantive review. Issue #92 exists to decide what to do about this, and it is
+the highest-value open issue in the repository, for the reason explained in
+section 7.
+
+### The agent roles available
+
+This project is worked by agents with defined specialisations. The ones that
+matter here:
+
+| Agent | Used for |
+|---|---|
+| `planner`, `architect` | Decomposing a milestone, deciding module boundaries |
+| `tdd-guide`, `python-reviewer` | Test-first discipline, Python review |
+| `security-reviewer` | Anything touching input parsing, identity, or filing |
+| `code-reviewer` | After every write |
+| `plankton-code-quality` | Write-time formatting and lint |
+| `principle-prove-it-works` | Before claiming anything is done |
+| `loop-operator` | Long autonomous runs with stall detection |
+| `blast-radius` | Before shipping a change that touches shared state |
+
+---
+
+## 4. The git cycle, and the full record
+
+### The loop
+
+`AGENTS.md` section two. No stage is skipped and no stage is reordered. One pull
+request carries one issue to done.
+
+```
+ 1. RESEARCH      read primary sources, not summaries
+ 2. EVALUATE      is this still true, and does it still matter
+ 3. ISSUE         bind the work to a numbered issue
+ 4. VALIDATE      prove the idea solves the issue before writing it
+ 5. BUILD         write the smallest change that closes the issue
+ 6. COMMIT        six word conventional commit, local validation green
+ 7. PUSH + PR     open the pull request, link the issue
+ 8. REVIEW        the-ai-developer or 10xdev4u-alt reviews
+ 9. VERIFY        reviewer validates against the issue, not against taste
+10. MERGE         merge commit. never squash
+11. CLEAN         remove local branch, remote branch, and any stale branch
+12. REPEAT        next issue
+```
+
+Stage 9 is the one people get wrong. The reviewer validates against the **issue**,
+not against taste. If the pull request solves the issue, it is correct even if the
+reviewer would have written it differently.
+
+### Commit rules, and the hook that enforces them
+
+Exactly six words in the subject, conventional commit form. Exactly one trailer:
+
+```
+Co-Authored-By: the-ai-developer <the-ai-developer@users.noreply.github.com>
+```
+
+Enforced by `.githooks/check_commit_msg.py`, which runs two ways: as a pre-commit
+hook via `.pre-commit-config.yaml`, and as a git `commit-msg` hook via
+`.githooks/commit-msg`.
+
+### Branch protection
+
+`config/branch_protection.json`, applied by `scripts/configure_branch_protection.sh`.
+
+- Merge commits only. Squash is **disabled**, rebase allowed.
+- Branch deleted automatically on merge.
+- One approving review required, from a code owner.
+- Branch must be up to date before merge.
+- All conversations resolved.
+- No force pushes.
+- `make validate` must be green.
+- Linear history allowed, merge commits allowed.
+
+The subtle part is in `docs/decisions/0001-protection-is-two-api-surfaces.md`:
+merge methods live on the repository settings API, required reviews live on the
+branch protection API, and the classic branch protection API has no field for
+merge methods. Conflating the two surfaces is the main way this goes wrong. It
+was verified live: a squash merge is refused with "the base branch policy prohibits
+the merge" while `GET /branches/main/protection` returns 404.
+
+### Every pull request so far, in order
+
+Twenty-six merged. The first five are bootstrap; the rest are product.
+
+| PR | Issue | What landed |
+|---|---|---|
+| #91 | #75 | Toolchain: ruff, mypy, pytest, one `make validate` |
+| #93 | #76 | Pre-commit hooks mirroring the gate |
+| #94 | #77 | CI running the same gate |
+| #95 | #1 | 541.6 twenty-field checklist, verbatim text |
+| #97 | #78 | Enforceable branch policy |
+| #99 | #3 | 541.7 deadline arithmetic, VOCC / MTO / NVOCC |
+| #100 | #6 | 545.5 reasonableness factors as check hooks |
+| #101 | #23 | ONE availability clock regimes as a dated lookup |
+| #102 | #16 | Hapag customs-hold clock stop and its adverse side |
+| #103 | #8 | Typed closure model, scheduled vs unscheduled |
+| #104 | #12 | U.S. federal holiday calendar, observed-day shifting |
+| #105 | #18 | Maersk working-day basis, Monday to Saturday |
+| #106 | #9 | Charge windows and per-terminal day units |
+| #107 | #11 | Hapag bank-holiday free-time extension |
+| #108 | #29 | Day-count recomputation from disclosures |
+| #109 | #30 | Arithmetic recomputation from the disclosed rate rule |
+| #113 | #110 | Tolerance band moved out of the engine into config |
+| #114 | #111 | Federal holiday set made a per-carrier parameter |
+| #115 | #2 | 541.4 vacatur and the surviving 541.6(a)(4) hook |
+| #116 | #40 | Born-digital PDF text layer parser |
+| #117 | #42 | Deterministic validation layer |
+| #118 | #112 | Inferred closure policy moved behind an opt-in |
+| #119 | #63 | Per-carrier submission checklists |
+| #122 | #59 | Evidence packet renderer, grouped by ground |
+| #123 | #121 | Completed the `.githooks` hooks path |
+| #124 | #61 | Capturer identity on every capture |
+
+Probe pull requests #96 and #98 were opened to prove branch protection actually
+blocks, then closed. Proving a control works is part of shipping it.
+
+---
+
+## 5. What the codebase looks like
+
+5,726 lines across 24 modules, 553 tests, zero runtime dependencies. Dev tools only:
+ruff, mypy, pytest. The test count moves as work lands, so treat `make validate`
+output as the number and this one as roughly right.
+
+```
+src/quayline/
+  regulation/   46 CFR Part 541 encoded, section numbers verified
+    checklist.py      the twenty 541.6 fields, verbatim
+    kill_switch.py    541.5, omission only. no arithmetic
+    deadline.py       541.7 / 541.8 clocks, NVOCC chain, cure rights
+    vacatur.py        541.4 vacated, 41104(f), liability-basis checks
+    source.py         provenance primitive
+  engine/       the audit checks and the recomputation
+    daycount.py       expected days from the invoice's own disclosures
+    amount.py         expected money from the carrier's own rate rule
+    reasonableness.py 545.5 factors
+    settings.py       loads config/audit.json
+  tariffs/      carrier data, one module per carrier, provenance on every block
+    hapag.py, one.py, blocks.py, registry.py
+  calendars/    day counting
+    holidays.py, closures.py, freetime.py, window.py, day_basis.py
+  models/       the invoice as stated
+    invoice.py
+  ingest/       documents in
+    pdftext.py        born-digital text layer, no OCR
+    validate.py       is the extraction internally consistent
+  evidence/     evidence and filing out
+    capture.py        who took it, when, digest of the bytes
+    checklist.py      what each carrier will not accept without
+    packet.py         grouped by ground, automatic claims first
+```
+
+**The two independent paths are the strongest signal in the engine.** A day count
+wrong in one direction and a total that is right can both be plausible on their
+own, and a carrier has to explain both. `engine/daycount.py` works out how many
+days should have been charged; `engine/amount.py` works out what those days are
+worth from the rate the carrier itself named. When they disagree, the finding is
+much stronger than either alone.
+
+---
+
+## 6. What is done, and what is left
+
+26 issues closed, 69 open, across six milestones.
+
+| Milestone | Open | Closed | What it is |
+|---|---|---|---|
+| M1 core engine | 26 | 16 | The recomputation. The regulation, the calendars, the tariffs. |
+| M2 ingestion | 8 | 2 | Getting a document in and checking it. |
+| M3 evidence and filing | 12 | 3 | Proving it, and sending it. |
+| M4 integrations | 10 | 0 | Carrier and terminal APIs. |
+| M5 platform and site | 7 | 4 | CLI, public site, the docs. |
+| M6 validation | 6 | 0 | The phase zero experiment. |
+
+M1's "core engine" issues look 16/42 done but the *load bearing* ones are done:
+the checklist, the vacatur, the deadlines, the recomputation paths, the closure
+model, the holiday calendar, the day-count arithmetic. What remains in M1 is
+mostly **tariff data loading**, and that is deliberate, because tariff data is
+transcription work with a real cost and it is not where the risk is.
+
+### The order I would take the remaining work in
+
+**M1 first, because everything downstream is weaker without it.**
+
+Highest value, in order:
+
+1. **#28 tariff resolution returning `None` rather than a guess.** This is the
+   single most important issue remaining. Every tariff module currently resolves
+   to a block; this makes "we do not have this terminal" a first-class answer
+   instead of a guess. It is the MSC problem from section 1, solved in the type.
+2. **#31 the availability contradiction check, using the invoice alone.** Pure
+   arithmetic, no external data, and it is a 541.6(b)(6) finding the carrier
+   cannot argue with because they disclosed both dates.
+3. **#32 the liability-basis check on the surviving 541.6(a)(4).** The strongest
+   hook surviving the vacatur of 541.4. #115 built the module; this wires it in.
+4. **#34 order findings so automatic wins lead the dispute letter.** Half done in
+   `evidence/packet.py`. Finishing it changes what a letter achieves.
+5. **#38 the audit result contract and public API surface.** Everything downstream
+   needs a stable shape to build against. Do this before the CLI.
+6. **#37 the typed warning system for model limits.** Directly serves the coverage
+   report in #84 and the research backlog in #83.
+7. **#39 the fixture corpus transcribed from real carrier tariffs.** This is the
+   single highest-leverage non-code item in the backlog. Every tariff bug we will
+   ever find is a transcription bug, and a corpus is how you find them.
+
+Then tariff data, in this order because it is cheapest first: #22 MSC label
+inversion, #24 ONE partial-shift and post-pull, #25 ZIM marked `UNVERIFIED`,
+#17 Maersk cluster blocks, #13 Hapag per-terminal blocks. #26 and #27 are
+acquisition tasks, not code, and #27 is explicitly a hole-we-ship item.
+
+**Then M2**, because filing is blocked on ingestion being trustworthy. #41 table
+extraction for the buried charge table, then #49 persist the raw document with a
+content hash, then #46 the terminal-plus-carrier double invoice, which is a real
+scam and a genuinely good differentiator.
+
+**Then M3**, and note the sequencing: #50 appointment screenshot spec and #51
+per-day evidence come before #62 submission adapters, because an adapter that
+sends an incomplete packet is worse than no adapter.
+
+**M4 last among the product milestones.** The integrations are the most attractive
+and the least important. Every one of them makes the product *look* more capable
+without making a single existing claim stronger. This is the scope trap and it is
+worth naming out loud to whoever is tempted.
+
+**M6 is the milestone that decides whether this is a company.** #85 is ten manual
+audits with no code. #86 sets the gates and kill criteria before running it. If
+the engine does not reproduce the manual audits, everything else is a very
+expensive way to be wrong. Do not skip M6 in favour of M4.
+
+### The open decisions that are not yours to make
+
+- **#92, reviewers outside the named panel.** What does meaningful review mean
+  when the reviewer is the author under a second account? This one is a policy
+  decision with real consequences and it is the one I would not decide alone.
+- **#90, pricing from measured data.** Blocked on #85. Any number before the
+  experiment is a guess we would have to defend.
+- **#79, the CLI surface.** Depends on #38 landing first.
+- **#81, the visual system.** Depends on #80.
+
+---
+
+## 7. The failures we have already made
+
+This is the section that will save you the most time, because every one of these
+was found late and none of them was obvious.
+
+**A parser that was character-perfect and still could not tell a valid document
+from an invalid one.** The #40 fixture shipped stating four days of free time from
+June 30 with an end date of July 7. Four days from June 30 is July 4. The parser
+read every character correctly. It had no opinion about whether the document made
+sense. That is the argument for #42, demonstrated by a shipped artifact rather
+than a hypothetical, and it is the general shape of the risk here: **extraction
+errors that are perfectly well-formed are invisible to the extractor.**
+
+**A test suite that passed a bug because it asserted on the wrong part.** The PDF
+parser was appending `) T` to every line. Every test passed, because every test
+asked "is this string present" rather than "is this text correct". It took one
+comparison against poppler's `pdftotext` to find it. That check is now a permanent
+test. **If your parser has a reference implementation available, test against it.**
+
+**A gate that enforced nothing and looked like it enforced everything.** For an
+entire working session, every commit was made with
+`git -c core.hooksPath=.githooks commit`. That directory contained
+`check_commit_msg.py` and no `commit-msg` shim, so git found no hook, ran nothing,
+and **exited 0**. A 7-word subject got through. The only reason it was caught was
+a manual word count being run as a cross-check, which is a habit and not a gate.
+Fixed in #123, and it then rejected my own next bad subject. **When a control
+fails silently, the question is not "did it catch it" but "what was it pretending
+to be".**
+
+**Three tests that asserted things which were not true.** A wrong-typed capturer
+"raises TypeError" (Python does not check argument types). A day list that
+"summarises" (the suffix said `+7 more` while printing all ten dates). A retention
+window that ran backwards and reported `-212` days remaining for a capture *inside*
+its window. In each case the test checked the part that already worked. **A test
+asserting something untrue is worse than no test, because it looks like coverage.**
+
+**An over-strict rule shipped knowingly.** The ONE power-of-attorney requirement
+is `UNVERIFIED` and may block submissions ONE would have accepted. That is the
+safe direction to be wrong in, and it is named in the code note rather than
+assumed away, but it should not be the thing that gets skipped when someone wants
+to ship a letter quickly.
+
+---
+
+## 8. Where the real opportunity is, if you want to innovate
+
+Not a feature list. These are the four places where the work is structurally
+advantageous and most competitors cannot follow quickly.
+
+**The self-documenting invoice is a moat nobody has noticed.** Every competitor is
+buying container event data and building a clock from it. The clock is a data
+dependency, a procurement problem, and a model problem. Recomputing from the
+invoice means **we can ship before we have a single data partnership**. The
+strategic consequence is that our cost base does not scale with carriers onboarded,
+which is the metric the whole category is valued on.
+
+**Carrier-clock data is still worth having, for a different reason.** The
+availability argument needs to know when the box was actually available, not what
+the carrier said. That is the second layer, and it is worth real money, but it is
+an argument built *on top of* a self-auditing engine, not a substitute for one.
+Position it that way and the integration work is additive. Position it as the
+foundation and we are a data company with a legal problem.
+
+**The evidence layer is a differentiated product, not plumbing.** We already have
+#61 (capturer identity) and #59 (grouped packets) and #63 (per-carrier
+checklists). The insight in `docs/research/004-evidence.md` is that a UIIA panel
+treats a clean gate-out receipt as an **allocation of liability**, and the
+evidence standard is published and consistent. So we can match a published
+standard rather than invent one. Issue #55, exploiting the missing-gate-record
+finding from UIIA precedent, is the most interesting unopened issue in the
+backlog, and it is the only one that lets us win without the carrier conceding
+anything.
+
+**Coverage as a product surface.** #84 asks for a coverage report listing what the
+engine does not know. That sounds like an internal tool and it is the opposite: a
+shipped, honest "here is exactly which carriers, terminals and claims we can and
+cannot adjudicate today" is more persuasive to a shipper than any benchmark,
+because a shipper does not trust a vendor who claims total coverage. The category's
+credibility problem is precisely that its vendors overclaim.
+
+### And the thing not to do
+
+Do not start M4. The integrations are the most attractive work in the backlog and
+the least valuable. Ten issues of carrier API work will make the product look
+substantially more capable while making zero existing claims stronger, and it is
+the standard way a project like this runs out of runway: impressive integrations,
+no proof the engine works, and a phase zero experiment that never runs because
+the integrations are always almost done.
+
+---
+
+## 9. First week
+
+1. Read `AGENTS.md` in full. It is the contract, and this document is a summary of
+   it that will drift.
+2. Read `docs/research/001-regulation.md`. If you cannot explain why 541.5 is
+   omission-only, you cannot work on the engine.
+3. Run `make install && make validate`. Confirm a clean gate and note the test count.
+4. Read `src/quayline/ingest/pdftext.py` and `src/quayline/ingest/validate.py`
+   back to back. They are the clearest statement of the philosophy in the repo:
+   a parser that refuses to guess, followed by a validator that fails closed.
+5. Read `src/quayline/evidence/checklist.py` and notice that the whole file is
+   `UNVERIFIED`. Ask yourself what it means to ship that, and whether the gate is
+   honest enough about it.
+6. Pick up #28. It is the highest-value open issue and it is the type-level
+   version of the MSC problem.
+
+When you open your first pull request, the reviewer's job is to validate it against
+the issue, not against taste. Write the pull request body so that someone who has
+not read the code can tell which acceptance criterion each part satisfies.
