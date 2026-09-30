@@ -30,6 +30,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from quayline.tariffs.blocks import RateBlock
+from quayline.tariffs.resolution import (
+    RateQuery,
+    Requirement,
+    Resolution,
+    resolve,
+)
 
 
 class UnresolvedRuleError(LookupError):
@@ -46,6 +52,9 @@ class Registry:
     """
 
     blocks: tuple[RateBlock, ...]
+    #: Rules that cannot be resolved without a further input. Empty by default,
+    #: so a registry with no dimension indexed rules needs no declaration.
+    requirements: tuple[Requirement, ...] = ()
 
     @staticmethod
     def normalise(reference: str) -> str:
@@ -63,34 +72,16 @@ class Registry:
         """
         return tuple(sorted(b.rule for b in self.blocks))
 
-    def resolve(self, reference: str, on: str) -> RateBlock:
-        """The block for a declared rule reference on a date.
+    def resolve(self, query: RateQuery) -> Resolution:
+        """The block for a declared rule reference on a date, or why there is not one.
 
-        Raises rather than returning an approximation. Three distinct failures are
-        reported distinctly, because they are different problems: not held at all,
-        held but not in force that day, or held more than once for the same day
-        which is a data error in this repository.
+        Issue 28 changed this from raising to returning. Resolution failure is a
+        normal, frequent answer, because coverage is not uniform across carriers, and
+        an exception is a control flow event that leaves a caller nowhere to put a
+        warning for the letter. See ``tariffs/resolution.py`` for the three refusals:
+        no approximation, no UNVERIFIED block, and no guess at a missing dimension.
         """
-        key = self.normalise(reference)
-        matches = [b for b in self.blocks if self.normalise(b.rule) == key]
-        if not matches:
-            raise UnresolvedRuleError(
-                f"no rate block held for rule {reference!r}. "
-                f"Held rules: {', '.join(self.held()) or 'none'}. "
-                f"This is a hole in our tariff data, not a finding against the carrier."
-            )
-        in_force = [b for b in matches if b.contains(on)]
-        if not in_force:
-            raise UnresolvedRuleError(
-                f"rule {reference!r} is held but was not in force on {on}. "
-                f"Held for: {', '.join(f'{b.effective_from}..{b.effective_to}' for b in matches)}"
-            )
-        if len(in_force) > 1:
-            raise UnresolvedRuleError(
-                f"rule {reference!r} resolves to {len(in_force)} blocks in force on {on}. "
-                f"That is overlapping data in this repository, not ambiguity in the tariff."
-            )
-        return in_force[0]
+        return resolve(query, self.blocks, self.requirements)
 
 
 __all__ = ["RateBlock", "Registry", "UnresolvedRuleError"]
