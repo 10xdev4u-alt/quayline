@@ -38,10 +38,22 @@ ALLOWED_TYPES = frozenset(
 
 REQUIRED_CO_AUTHOR = "the-ai-developer"
 
+# The address the trailer must carry, not just the name.
+#
+# GitHub resolves a co-author by email. A wrong address does not fail the commit, does
+# not warn, and does not affect the gate, and the result is an unlinked contributor
+# rather than the account. An unlinked co-author is indistinguishable from no
+# co-author, so validating the name alone means the rule this file exists to enforce
+# is satisfiable in a form nothing downstream can read.
+REQUIRED_CO_AUTHOR_EMAIL = "the-ai-developer@users.noreply.github.com"
+
 # type(scope): the scope is optional and binds to the type with no space.
 SUBJECT_RE = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]+)\))?: (?P<rest>.+)$")
+# The email is no longer optional. A trailer without one produces no co-author on
+# GitHub, so accepting it is accepting a commit that appears to carry the attribution
+# and does not.
 CO_AUTHOR_RE = re.compile(
-    r"^Co-Authored-By:\s*(?P<who>.+?)\s*(?:<(?P<email>[^>]+)>)?\s*$", re.IGNORECASE
+    r"^Co-Authored-By:\s*(?P<who>[^<]+?)\s*<(?P<email>[^>]+)>\s*$", re.IGNORECASE
 )
 TRAILER_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z-]*:")
 
@@ -87,25 +99,54 @@ def check_subject(raw: str) -> list[str]:
 
 
 def check_co_authors(body: list[str]) -> list[str]:
-    """Validate the trailers. the-ai-developer must appear and must be alone."""
-    co_authors: list[str] = []
+    """Validate the trailers. the-ai-developer must appear, alone, with the right address.
+
+    Name and address are checked together. Checking the name alone once let a Gmail
+    address through, and the commit was authored and merged, and the only reason it
+    was noticed was that I made the same mistake and read my own message back.
+    """
+    co_authors: list[tuple[str, str | None]] = []
     for line in body:
         if not TRAILER_LINE_RE.match(line):
             continue
         trailer = CO_AUTHOR_RE.match(line)
         if trailer:
-            co_authors.append(trailer.group("who").strip())
+            co_authors.append((trailer.group("who").strip(), trailer.group("email")))
 
     if not co_authors:
         return [
-            f"the message has no Co-Authored-By trailer. "
-            f"The sole co-author is {REQUIRED_CO_AUTHOR}."
+            f"the message has no Co-Authored-By trailer naming "
+            f"{REQUIRED_CO_AUTHOR} <{REQUIRED_CO_AUTHOR_EMAIL}>."
         ]
 
-    unexpected = sorted(who for who in co_authors if who.lower() != REQUIRED_CO_AUTHOR)
+    problems: list[str] = []
+
+    unexpected = sorted(who for who, _ in co_authors if who.lower() != REQUIRED_CO_AUTHOR)
     if unexpected:
-        return [f"the sole co-author is {REQUIRED_CO_AUTHOR}. Remove: {', '.join(unexpected)}"]
-    return []
+        problems.append(
+            f"the sole co-author is {REQUIRED_CO_AUTHOR}. Remove: {', '.join(unexpected)}"
+        )
+
+    if len(co_authors) > 1:
+        problems.append(
+            f"there must be exactly one Co-Authored-By trailer, found {len(co_authors)}."
+        )
+
+    for who, email in co_authors:
+        if email is None:
+            problems.append(
+                f"{who} has no email address. GitHub resolves a co-author by email, so a "
+                f"trailer without one attributes nobody. The required trailer is "
+                f"'Co-Authored-By: {REQUIRED_CO_AUTHOR} <{REQUIRED_CO_AUTHOR_EMAIL}>'."
+            )
+        elif email.lower() != REQUIRED_CO_AUTHOR_EMAIL:
+            problems.append(
+                f"the co-author address is {email!r}. The required address is "
+                f"{REQUIRED_CO_AUTHOR_EMAIL!r}. A wrong address records an unlinked "
+                f"contributor rather than the account."
+            )
+
+    return problems
 
 
 def check(message: str) -> list[str]:
@@ -134,7 +175,8 @@ def main(argv: list[str]) -> int:
         f"Rules: {SUBJECT_WORD_COUNT} words in '<type>: <description>' form, "
         f"types from {', '.join(sorted(ALLOWED_TYPES))}, "
         f"under {MAX_SUBJECT_CHARS} characters, no surrounding whitespace, and "
-        f"exactly one Co-Authored-By trailer naming {REQUIRED_CO_AUTHOR}.",
+        f"exactly one Co-Authored-By trailer naming "
+        f"{REQUIRED_CO_AUTHOR} <{REQUIRED_CO_AUTHOR_EMAIL}>.",
         file=sys.stderr,
     )
     return 1

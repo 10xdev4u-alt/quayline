@@ -8,6 +8,7 @@ wrong thing, or accepts something it should not, teaches agents to reach for
 from __future__ import annotations
 
 import importlib.util
+import re as _re
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +40,111 @@ GOOD_SUBJECT = "build: add toolchain with validation gate"
 GOOD_TRAILER = "Co-Authored-By: the-ai-developer <the-ai-developer@users.noreply.github.com>"
 
 
+# ------------------------------------------------------------------ issue 129
+# The address, not just the name.
+
+
+def test_rejects_a_wrong_co_author_address() -> None:
+    """The exact mistake I made and the hook accepted.
+
+    A Gmail address in place of the account address does not fail the commit, does
+    not warn, and does not affect the gate. It records an unlinked contributor, which
+    is indistinguishable from no co-author at all.
+    """
+    problems = check(
+        message(
+            GOOD_SUBJECT,
+            "Co-Authored-By: the-ai-developer <the-ai-developer@users.noreply@gmail.com>",
+        )
+    )
+    assert len(problems) == 1
+    assert "the-ai-developer@users.noreply@gmail.com" in problems[0]
+    assert "users.noreply.github.com" in problems[0], "the message must name the required address"
+    assert "unlinked contributor" in problems[0], "the message must say why it matters"
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "the-ai-developer@users.noreply.github.com",
+        "THE-AI-DEVELOPER@USERS.NOREPLY.GITHUB.COM",
+        "The-Ai-Developer@Users.NoReply.GitHub.com",
+    ],
+)
+def test_the_address_is_case_insensitive(address: str) -> None:
+    """Email local parts are technically case sensitive and domains are not, but
+    GitHub matches case insensitively, so a case variant must not be a false
+    positive that trains people to disable the check."""
+    assert check(message(GOOD_SUBJECT, f"Co-Authored-By: the-ai-developer <{address}>")) == []
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "the-ai-developer@users.noreply.gmail.com",
+        "the-ai-developer@gmail.com",
+        "someone-else@users.noreply.github.com",
+        "the-ai-developer",
+    ],
+)
+def test_a_near_miss_address_is_rejected(address: str) -> None:
+    for problems in (
+        check(message(GOOD_SUBJECT, f"Co-Authored-By: the-ai-developer <{address}>")),
+    ):
+        assert problems, address
+
+
+def test_a_correct_address_with_a_wrong_name_is_still_rejected() -> None:
+    """Name and address are checked together. Either alone is not the rule."""
+    problems = check(
+        message(
+            GOOD_SUBJECT, "Co-Authored-By: someone-else <the-ai-developer@users.noreply.github.com>"
+        )
+    )
+    assert problems
+    assert "sole co-author" in problems[0]
+
+
+def test_a_wrong_name_with_a_wrong_address_reports_both() -> None:
+    problems = check(message(GOOD_SUBJECT, "Co-Authored-By: someone <someone@example.com>"))
+    joined = " ".join(problems)
+    assert "sole co-author" in joined
+    assert "someone@example.com" in joined
+
+
+def test_two_co_authors_are_rejected_even_with_correct_addresses() -> None:
+    """The count rule, now that a bad address is no longer the usual way to trip it."""
+    problems = check(
+        message(
+            GOOD_SUBJECT,
+            "Co-Authored-By: the-ai-developer <the-ai-developer@users.noreply.github.com>",
+            "Co-Authored-By: someone-else <someone@example.com>",
+        )
+    )
+    joined = " ".join(problems)
+    assert "sole co-author" in joined
+    assert "exactly one Co-Authored-By trailer" in joined
+
+
+def test_the_repository_history_carries_the_address_the_rule_requires() -> None:
+    """Guards against a bad address already being in history.
+
+    The rule is only worth anything if the history it is supposed to describe
+    actually satisfies it, and a bad address in a merged commit is not visible from
+    the diff of the change that added the check.
+    """
+    subject_rule = r"^Co-Authored-By:\s*[^<]+?\s*<[^>]+>\s*$"
+    log = subprocess.run(
+        ["git", "log", "--format=%B"], capture_output=True, text=True, check=True
+    ).stdout
+    trailers = [ln for ln in log.splitlines() if ln.lower().startswith("co-authored-by:")]
+    assert trailers, "history must carry co-author trailers"
+    for trailer in trailers:
+        assert _re.match(subject_rule, trailer), f"malformed trailer in history: {trailer!r}"
+        email = trailer.rsplit("<", 1)[1].rstrip(">").strip()
+        assert email.lower() == GOOD_TRAILER.rsplit("<", 1)[1].rstrip(">"), trailer
+
+
 def message(subject: str = GOOD_SUBJECT, *body: str) -> str:
     return "\n".join([subject, *body, ""])
 
@@ -53,8 +159,15 @@ def test_accepts_a_scoped_type() -> None:
     assert check(message(subject, GOOD_TRAILER)) == []
 
 
-def test_accepts_a_trailer_without_an_email() -> None:
-    assert check(message(GOOD_SUBJECT, "Co-Authored-By: the-ai-developer")) == []
+def test_rejects_a_trailer_without_an_email() -> None:
+    """Replaces a test that accepted this, written before the rule existed.
+
+    GitHub resolves a co-author by email. A trailer with no address attributes nobody,
+    so it is a commit that appears to carry the co-author and does not.
+    """
+    problems = check(message(GOOD_SUBJECT, "Co-Authored-By: the-ai-developer"))
+    assert problems
+    assert "no Co-Authored-By trailer" in problems[0]
 
 
 def test_accepts_a_long_body_with_other_trailers() -> None:
@@ -125,7 +238,12 @@ def test_rejects_a_second_co_author() -> None:
 
 def test_rejects_a_case_variant_co_author() -> None:
     """The comparison is case-insensitive so a capitalised trailer is not a bypass."""
-    problems = check(message(GOOD_SUBJECT, "Co-Authored-By: The-AI-Developer <x@y.com>"))
+    problems = check(
+        message(
+            GOOD_SUBJECT,
+            "Co-Authored-By: The-AI-Developer <the-ai-developer@users.noreply.github.com>",
+        )
+    )
     assert problems == []
 
 
