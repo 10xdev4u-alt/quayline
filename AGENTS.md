@@ -41,6 +41,81 @@ Rules:
 4. Commit signing is off. Merge commits are on. Squash is off. Branch delete on
    merge is on.
 
+### The panel is closed, and what happens outside it
+
+Raised by issue 92, from a merge that was blocked by a reviewer who was not on
+the panel and by an approval that did not count.
+
+**The panel is exactly `10xdev4u-alt` and `the-ai-developer`.** There is no third
+seat and no way to add one by review. `.github/CODEOWNERS` is the allowlist,
+because the branch protection API has no allowlist field, and
+`require_code_owner_reviews` is what makes it binding.
+
+A reviewer outside the panel is a real situation and not a hypothetical. CodeRabbit
+installed itself on this repository at creation and was able to hold two merges
+through a changes-requested state. Both of its findings were correct, and the
+correct response was to take both.
+
+**Judge the finding, not the reviewer.** The disposition is a three step, in order,
+and step three is the only one that ever involves identity:
+
+1. Is the finding true of the code as it stands? Decide that on its merits, and say
+   which line or which acceptance criterion it touches.
+2. If it is true, it is work. Fix it, or record in the pull request why it does not
+   apply. A true finding is not dismissed for coming from an unlisted account, and
+   a false one is not taken for coming from a listed account.
+3. Only if the finding is false or not applicable, dismiss the review, and **write
+   the reason into the dismissal.** `gh pr review <n> --request-changes` with a
+   body, or the API equivalent. A review that is dismissed with no recorded reason
+   leaves the next person unable to tell a considered dismissal from an oversight.
+
+Dismissal is the right call when the finding is factually wrong, when it is right
+about the code and wrong about what the issue asked for, or when it conflicts with
+an acceptance criterion that the reviewer did not read. It is not the right call
+because the reviewer is off-panel, and it is not the right call to unblock a merge.
+
+### The ordering trap that cost a merge
+
+**An approval from `the-ai-developer` does not count toward the required review
+count until that account's collaborator access is active.** A pending invitation
+registers a review as `CONTRIBUTOR`, not `COLLABORATOR`, and branch protection does
+not count it. The approval looks like it was given and the merge still refuses.
+
+Accept the invitation through the API with an empty body, before any approval is
+expected to count:
+
+```
+gh api --method PATCH repos/10xdev4u-alt/quayline/invitations/<id> -f ''
+```
+
+`gh api repos/10xdev4u-alt/quayline/invitations` lists pending invitations and
+gives the id. Verify the state after accepting, before opening the first pull
+request that depends on it:
+
+```
+scripts/verify_repository_state.sh
+```
+
+That script reports collaborator access and the live protection state, and changes
+nothing. `scripts/configure_branch_protection.sh` applies the policy.
+`make repo-state` runs the check. Neither creates a reviewer's approval.
+
+### A pull request does not edit this file to relax its own rules
+
+**The rule that a pull request is reviewed under is the rule in force when the pull
+request was opened.** A change to this file that weakens the review requirement,
+the commit rules, the gate, or the merge policy does not take effect for its own
+pull request, and is reverted rather than merged.
+
+This is not a formality, it is the only thing that makes this section mean anything.
+Without it the shortest route to a green merge is to edit the rule that is blocking
+the merge, in the same commit, and to rely on the reviewer not noticing the diff in
+`AGENTS.md` between two hundred lines of other changes.
+
+Reviewers are asked specifically to check the `AGENTS.md` diff on every pull
+request, and to treat a change to section one, two or eight as blocking until the
+author explains why it is not a relaxation.
+
 ---
 
 ## 2. The eight stage pull request loop

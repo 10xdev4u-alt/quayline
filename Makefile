@@ -4,7 +4,7 @@
 #   make hooks      re-wire the git hooks after a fresh clone
 #   make validate   the gate: pytest, ruff check, ruff format check, mypy, index
 #   make format     apply ruff formatting and the autofixable lint rules
-#   make hooks      install the commit-msg and pre-push hooks
+#   make repo-state report live collaborator and branch protection state, change nothing
 #   make clean      remove build and cache artifacts
 
 PY      := .venv/bin/python
@@ -14,7 +14,7 @@ MYPY    := .venv/bin/mypy
 PYTEST  := .venv/bin/pytest
 PRECOMMIT := .venv/bin/pre-commit
 
-.PHONY: install validate format hooks clean
+.PHONY: install validate format hooks clean index repo-state
 
 # The dev group is declared in pyproject.toml and installed from there. Naming
 # the tools on the command line instead would let any older version already on
@@ -71,6 +71,13 @@ hooks:
 	for stage in pre-commit commit-msg pre-push; do \
 		$(PRECOMMIT) install --hook-type $$stage; \
 	done
+
+# Issue 92. Report the live repository state so the collaborator ordering trap is
+# found by running a command rather than by being blocked by a merge. Reports only.
+# Applying the policy is scripts/configure_branch_protection.sh, which is separate
+# on purpose: a setup step that silently grants access is a different risk.
+repo-state:
+	scripts/verify_repository_state.sh
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov
