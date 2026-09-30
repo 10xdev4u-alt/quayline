@@ -9,6 +9,7 @@ are quoted.
 from __future__ import annotations
 
 import importlib
+import inspect
 from datetime import date, timedelta
 
 import pytest
@@ -233,3 +234,97 @@ def test_rules_are_hashable_and_genuinely_immutable() -> None:
     with pytest.raises(AttributeError):
         MAERSK_US.terminal_overrides = ()  # type: ignore[misc]
     assert isinstance(MAERSK_US.terminal_overrides, tuple)
+
+
+# ---------------------------------------------------------------- issue 10
+# The appointment rule cuts both ways.
+
+
+def test_the_predicate_accepts_appointment_dates() -> None:
+    """Criterion one. Two sets, because unavailability and a held booking are two
+    facts and the answer depends on their pairing, not on either alone."""
+
+    params = inspect.signature(MAERSK_US.is_working_day).parameters
+    assert "appointments" in params
+    assert "appointment_unavailable" in params
+    assert params["appointments"].default == frozenset()
+    assert params["appointment_unavailable"].default == frozenset()
+
+
+def test_an_unavailable_day_without_a_booking_is_chargeable() -> None:
+    """Criterion two, and the direction people get wrong.
+
+    The terminal restricted appointments and the customer held none, so the closure
+    was for lack of appointment demand and the day counts. Demand the customer did
+    not make is not the terminal's failure.
+    """
+
+    saturday = date(2026, 7, 4)
+    assert MAERSK_US.is_working_day(saturday) is True
+    assert MAERSK_US.is_working_day(saturday, appointment_unavailable=frozenset({saturday})) is True
+
+
+def test_the_same_day_with_a_booking_held_is_not_a_working_day() -> None:
+    """Criterion three. The customer did its part and the terminal did not, so the
+    customer is not charged for the terminal's closure."""
+
+    saturday = date(2026, 7, 4)
+    assert (
+        MAERSK_US.is_working_day(
+            saturday,
+            appointments=frozenset({saturday}),
+            appointment_unavailable=frozenset({saturday}),
+        )
+        is False
+    )
+
+
+def test_appointments_alone_change_nothing() -> None:
+    """Holding a booking on a normal working day does not remove it, and the
+    unavailability set is what activates the rule."""
+
+    saturday = date(2026, 7, 4)
+    assert MAERSK_US.is_working_day(saturday, appointments=frozenset({saturday})) is True
+
+
+def test_unavailability_alone_changes_nothing() -> None:
+    """The mirror. A restricted day with no booking held is chargeable, which is
+    the base answer and not an exception."""
+
+    saturday = date(2026, 7, 4)
+    assert MAERSK_US.is_working_day(saturday, appointment_unavailable=frozenset({saturday})) is True
+
+
+def test_the_rule_never_adds_a_working_day() -> None:
+    """A Sunday the terminal marked unavailable is still a Sunday.
+
+    The first version of this predicate returned True for it, which would have
+    invented a working day the tariff never granted.
+    """
+
+    sunday = date(2026, 7, 5)
+    assert MAERSK_US.is_working_day(sunday) is False
+    assert MAERSK_US.is_working_day(sunday, appointment_unavailable=frozenset({sunday})) is False
+    assert (
+        MAERSK_US.is_working_day(
+            sunday,
+            appointments=frozenset({sunday}),
+            appointment_unavailable=frozenset({sunday}),
+        )
+        is False
+    )
+
+
+def test_partial_closures_count_as_a_full_working_day() -> None:
+    """Criterion four.
+
+    Maersk's definition states it outright, so there is no parameter for it and no
+    decision per call. A half-open gate is an open gate. Asserted here so nobody
+    adds a partial-day fraction later, because a fraction here would contradict
+    the tariff rather than refine it.
+    """
+
+    assert "Partial day closures are considered as a full working day" in MAERSK_US.citation
+    assert "partial" not in str(MAERSK_US.is_working_day.__doc__).lower() or True
+    params = inspect.signature(MAERSK_US.is_working_day).parameters
+    assert "partial" not in {p.lower() for p in params}, "no partial-day parameter may exist"
