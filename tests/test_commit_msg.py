@@ -8,8 +8,11 @@ wrong thing, or accepts something it should not, teaches agents to reach for
 from __future__ import annotations
 
 import importlib.util
+import os
+import re as _re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType
 
@@ -39,6 +42,127 @@ GOOD_SUBJECT = "build: add toolchain with validation gate"
 GOOD_TRAILER = "Co-Authored-By: the-ai-developer <the-ai-developer@users.noreply.github.com>"
 
 
+# ------------------------------------------------------------------ issue 129
+# The address, not just the name.
+
+
+def test_rejects_a_wrong_co_author_address() -> None:
+    """The exact mistake I made and the hook accepted.
+
+    A Gmail address in place of the account address does not fail the commit, does
+    not warn, and does not affect the gate. It records an unlinked contributor, which
+    is indistinguishable from no co-author at all.
+    """
+    problems = check(
+        message(
+            GOOD_SUBJECT,
+            "Co-Authored-By: the-ai-developer <the-ai-developer@users.noreply@gmail.com>",
+        )
+    )
+    assert len(problems) == 1
+    assert "the-ai-developer@users.noreply@gmail.com" in problems[0]
+    assert "users.noreply.github.com" in problems[0], "the message must name the required address"
+    assert "unlinked contributor" in problems[0], "the message must say why it matters"
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "the-ai-developer@users.noreply.github.com",
+        "THE-AI-DEVELOPER@USERS.NOREPLY.GITHUB.COM",
+        "The-Ai-Developer@Users.NoReply.GitHub.com",
+    ],
+)
+def test_the_address_is_case_insensitive(address: str) -> None:
+    """Email local parts are technically case sensitive and domains are not, but
+    GitHub matches case insensitively, so a case variant must not be a false
+    positive that trains people to disable the check."""
+    assert check(message(GOOD_SUBJECT, f"Co-Authored-By: the-ai-developer <{address}>")) == []
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "the-ai-developer@users.noreply.gmail.com",
+        "the-ai-developer@gmail.com",
+        "someone-else@users.noreply.github.com",
+        "the-ai-developer",
+    ],
+)
+def test_a_near_miss_address_is_rejected(address: str) -> None:
+    for problems in (
+        check(message(GOOD_SUBJECT, f"Co-Authored-By: the-ai-developer <{address}>")),
+    ):
+        assert problems, address
+
+
+def test_a_correct_address_with_a_wrong_name_is_still_rejected() -> None:
+    """Name and address are checked together. Either alone is not the rule."""
+    problems = check(
+        message(
+            GOOD_SUBJECT, "Co-Authored-By: someone-else <the-ai-developer@users.noreply.github.com>"
+        )
+    )
+    assert problems
+    assert "sole co-author" in problems[0]
+
+
+def test_a_wrong_name_with_a_wrong_address_reports_both() -> None:
+    problems = check(message(GOOD_SUBJECT, "Co-Authored-By: someone <someone@example.com>"))
+    joined = " ".join(problems)
+    assert "sole co-author" in joined
+    assert "someone@example.com" in joined
+
+
+def test_two_co_authors_are_rejected_even_with_correct_addresses() -> None:
+    """The count rule, now that a bad address is no longer the usual way to trip it."""
+    problems = check(
+        message(
+            GOOD_SUBJECT,
+            "Co-Authored-By: the-ai-developer <the-ai-developer@users.noreply.github.com>",
+            "Co-Authored-By: someone-else <someone@example.com>",
+        )
+    )
+    joined = " ".join(problems)
+    assert "sole co-author" in joined
+    assert "exactly one Co-Authored-By trailer" in joined
+
+
+def test_the_repository_history_carries_the_address_the_rule_requires() -> None:
+    """Guards against a bad address already being in history.
+
+    The rule is only worth anything if the history it is supposed to describe
+    actually satisfies it, and a bad address in a merged commit is not visible from
+    the diff of the change that added the check.
+    """
+    subject_rule = r"^Co-Authored-By:\s*[^<]+?\s*<[^>]+>\s*$"
+
+    # CI checks out with fetch-depth 1, so there is no history to audit. The first
+    # version of this test asserted "history must carry trailers" unconditionally and
+    # failed the gate on this very pull request, because in a shallow clone there are
+    # no trailers to find. Asserting a property in a context where it cannot be
+    # observed is asserting something untrue, and this file has three examples of that
+    # already, so the fix is to say what can be checked and stop.
+    shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    if shallow == "true":
+        pytest.skip("shallow clone, the property is not observable here")
+
+    log = subprocess.run(
+        ["git", "log", "--format=%B"], capture_output=True, text=True, check=True
+    ).stdout
+    trailers = [ln for ln in log.splitlines() if ln.lower().startswith("co-authored-by:")]
+    assert trailers, "a full clone must carry co-author trailers"
+    for trailer in trailers:
+        assert _re.match(subject_rule, trailer), f"malformed trailer in history: {trailer!r}"
+        email = trailer.rsplit("<", 1)[1].rstrip(">").strip()
+        assert email.lower() == GOOD_TRAILER.rsplit("<", 1)[1].rstrip(">"), trailer
+
+
 def message(subject: str = GOOD_SUBJECT, *body: str) -> str:
     return "\n".join([subject, *body, ""])
 
@@ -53,8 +177,15 @@ def test_accepts_a_scoped_type() -> None:
     assert check(message(subject, GOOD_TRAILER)) == []
 
 
-def test_accepts_a_trailer_without_an_email() -> None:
-    assert check(message(GOOD_SUBJECT, "Co-Authored-By: the-ai-developer")) == []
+def test_rejects_a_trailer_without_an_email() -> None:
+    """Replaces a test that accepted this, written before the rule existed.
+
+    GitHub resolves a co-author by email. A trailer with no address attributes nobody,
+    so it is a commit that appears to carry the co-author and does not.
+    """
+    problems = check(message(GOOD_SUBJECT, "Co-Authored-By: the-ai-developer"))
+    assert problems
+    assert "no Co-Authored-By trailer" in problems[0]
 
 
 def test_accepts_a_long_body_with_other_trailers() -> None:
@@ -125,7 +256,12 @@ def test_rejects_a_second_co_author() -> None:
 
 def test_rejects_a_case_variant_co_author() -> None:
     """The comparison is case-insensitive so a capitalised trailer is not a bypass."""
-    problems = check(message(GOOD_SUBJECT, "Co-Authored-By: The-AI-Developer <x@y.com>"))
+    problems = check(
+        message(
+            GOOD_SUBJECT,
+            "Co-Authored-By: The-AI-Developer <the-ai-developer@users.noreply.github.com>",
+        )
+    )
     assert problems == []
 
 
@@ -224,7 +360,20 @@ def test_pointing_hooks_path_at_githooks_still_enforces_the_rule(tmp_path: Path)
     This is the test issue 121 asked for. Everything else here checks the parts;
     this one reproduces the actual bypass, in a throwaway repository, by making
     the same mistake again and asserting it no longer works.
+
+    Requires ``make install``. The accept case at the end runs the pre-commit stage,
+    which needs the virtualenv, and a fresh clone without one rejects every commit
+    with "pre-commit not found". That is a non-zero exit, so the reject case would
+    pass for entirely the wrong reason, and the good case fails. Found by running
+    this file in a ``--depth 1`` clone, which is the closest thing to a fresh
+    checkout that CI ever does.
+
+    The property itself, "the commit-msg shim runs under the override", needs no
+    virtualenv and is asserted separately by
+    ``test_the_commit_msg_shim_rejects_a_bad_message_with_no_venv``.
     """
+    if not (ROOT / ".venv" / "bin" / "pre-commit").exists():
+        pytest.skip("needs `make install`; the no-venv property is covered separately")
     repo = tmp_path / "repo"
     repo.mkdir()
     env = {
@@ -282,3 +431,41 @@ def test_the_default_hooks_path_is_not_githooks() -> None:
     reconsidered rather than quietly deleted."""
     hooks = ROOT / "Makefile"
     assert hooks.exists()
+
+
+def test_the_commit_msg_shim_rejects_a_bad_message_with_no_venv() -> None:
+    """The property issue 121 was about, checked without a virtualenv.
+
+    The end to end test above needs `make install`, because its accept case runs the
+    pre-commit stage. This one invokes the shim exactly as git would and needs
+    nothing but a shell and python, so the property holds on a fresh clone.
+
+    It is also the reason the end to end test skips rather than pretending. A reject
+    assertion satisfied by "pre-commit not found" is a test that passes because the
+    repository is unconfigured, and that is a test that will keep passing after the
+    thing it is about is removed.
+    """
+    shim = _hooks_dir() / "commit-msg"
+    assert shim.exists() and shim.stat().st_mode & 0o111
+
+    with tempfile.TemporaryDirectory() as tmp:
+        message = Path(tmp) / "msg"
+        message.write_text(
+            "feat: reject a subject with too many words\n\n"
+            "Co-Authored-By: the-ai-developer <the-ai-developer@users.noreply.github.com>\n"
+        )
+        env = {**os.environ, "PATH": "/usr/bin:/bin"}
+        bad = subprocess.run(
+            [str(shim), str(message)], capture_output=True, text=True, check=False, env=env
+        )
+        assert bad.returncode != 0
+        assert "6 words" in bad.stdout + bad.stderr, "the rule must be named, not merely enforced"
+
+        message.write_text(
+            "build: add toolchain with validation gate\n\n"
+            "Co-Authored-By: the-ai-developer <the-ai-developer@users.noreply.github.com>\n"
+        )
+        good = subprocess.run(
+            [str(shim), str(message)], capture_output=True, text=True, check=False, env=env
+        )
+        assert good.returncode == 0, good.stdout + good.stderr
