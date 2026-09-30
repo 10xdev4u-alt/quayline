@@ -174,17 +174,33 @@ class ResolutionAttempt:
 
     requested_on: date
     answered_on: date | None
-    mutually_extended: bool = False
+    as_of: date
+    #: A later deadline agreed by both parties under 541.8(b), if any. A date, not
+    #: a flag, because an agreement moves the ceiling rather than removing it. A
+    #: boolean would clear a carrier that breaks the agreed deadline too.
+    extended_to: date | None = None
+
+    @property
+    def ceiling(self) -> date:
+        """The date an answer is due by: the agreed extension, or thirty days."""
+        if self.extended_to is not None:
+            return self.extended_to
+        return self.requested_on + timedelta(days=RESOLUTION_WINDOW_DAYS)
 
     @property
     def overdue(self) -> bool:
-        """Past the (b) ceiling with no agreement to extend it."""
+        """Past the applicable ceiling, answered or not.
 
-        if self.mutually_extended:
-            return False
-        if self.answered_on is None:
-            return True
-        return (self.answered_on - self.requested_on).days > RESOLUTION_WINDOW_DAYS
+        An unanswered request is overdue only once the ceiling has passed as of the
+        evaluation date. Without that comparison a request made yesterday with no
+        reply yet produces "silence is not an attempt", accusing a carrier that is
+        still inside its window. `as_of` is required rather than defaulted to
+        today, because a check evaluated "now" gives a different answer every day
+        it runs, and a finding that appears and disappears with the calendar is not
+        a finding.
+        """
+        end = self.answered_on if self.answered_on is not None else self.as_of
+        return end > self.ceiling
 
 
 def check_resolution_attempt(attempt: ResolutionAttempt) -> ProcessFinding | None:
@@ -199,18 +215,26 @@ def check_resolution_attempt(attempt: ResolutionAttempt) -> ProcessFinding | Non
         return None
     if attempt.answered_on is None:
         detail = (
-            f"No response to a request made {attempt.requested_on.isoformat()}. 541.8(b) "
-            f"requires an attempt to resolve within {RESOLUTION_WINDOW_DAYS} days, and "
-            f"silence is not an attempt. Substantive entitlement, if any, comes from "
-            f"{ENTITLEMENT_SOURCES}, never from 541.8."
+            f"No response to a request made {attempt.requested_on.isoformat()}, due by "
+            f"{attempt.ceiling.isoformat()}. 541.8(b) requires an attempt to resolve, "
+            f"and silence past the ceiling is not an attempt. Substantive entitlement, "
+            f"if any, comes from {ENTITLEMENT_SOURCES}, never from 541.8."
         )
     else:
-        late_by = (attempt.answered_on - attempt.requested_on).days - RESOLUTION_WINDOW_DAYS
-        detail = (
-            f"Answered {late_by} day(s) past the 541.8(b) window with no mutual extension. "
-            f"Substantive entitlement, if any, comes from {ENTITLEMENT_SOURCES}, never "
-            f"from 541.8."
-        )
+        late_by = (attempt.answered_on - attempt.ceiling).days
+        if attempt.extended_to is not None:
+            detail = (
+                f"Answered {late_by} day(s) past the mutually extended deadline of "
+                f"{attempt.ceiling.isoformat()}. The extension moved the ceiling; it did "
+                f"not remove it. Substantive entitlement, if any, comes from "
+                f"{ENTITLEMENT_SOURCES}, never from 541.8."
+            )
+        else:
+            detail = (
+                f"Answered {late_by} day(s) past the 541.8(b) window with no mutual "
+                f"extension. Substantive entitlement, if any, comes from "
+                f"{ENTITLEMENT_SOURCES}, never from 541.8."
+            )
     return ProcessFinding(
         tier=ProcessTier.PROCESS,
         cite=CITE_541_8_B,

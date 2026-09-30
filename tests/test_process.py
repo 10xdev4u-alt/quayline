@@ -8,6 +8,7 @@ the failure the module exists to stop.
 
 from __future__ import annotations
 
+import inspect
 from datetime import date
 
 import pytest
@@ -132,18 +133,20 @@ def test_attempt_to_resolve_is_not_resolve() -> None:
 
 def test_silence_is_not_an_attempt() -> None:
     finding = check_resolution_attempt(
-        ResolutionAttempt(requested_on=date(2026, 7, 21), answered_on=None)
+        ResolutionAttempt(requested_on=date(2026, 7, 21), answered_on=None, as_of=date(2026, 9, 1))
     )
     assert finding is not None
     assert finding.tier is ProcessTier.PROCESS
     assert finding.cite == CITE_541_8_B
-    assert "silence is not an attempt" in finding.detail
+    assert "silence past the ceiling is not an attempt" in finding.detail
     assert "never from 541.8" in finding.detail
 
 
 def test_a_late_answer_without_agreement_is_a_finding() -> None:
     finding = check_resolution_attempt(
-        ResolutionAttempt(requested_on=date(2026, 7, 21), answered_on=date(2026, 9, 1))
+        ResolutionAttempt(
+            requested_on=date(2026, 7, 21), answered_on=date(2026, 9, 1), as_of=date(2026, 9, 2)
+        )
     )
     assert finding is not None
     assert "past the 541.8(b) window" in finding.detail
@@ -159,7 +162,8 @@ def test_a_late_answer_with_agreement_has_complied() -> None:
             ResolutionAttempt(
                 requested_on=date(2026, 7, 21),
                 answered_on=date(2026, 9, 1),
-                mutually_extended=True,
+                as_of=date(2026, 9, 2),
+                extended_to=date(2026, 9, 15),
             )
         )
         is None
@@ -169,7 +173,11 @@ def test_a_late_answer_with_agreement_has_complied() -> None:
 def test_an_answer_inside_the_window_is_not_a_finding() -> None:
     assert (
         check_resolution_attempt(
-            ResolutionAttempt(requested_on=date(2026, 7, 21), answered_on=date(2026, 8, 10))
+            ResolutionAttempt(
+                requested_on=date(2026, 7, 21),
+                answered_on=date(2026, 8, 10),
+                as_of=date(2026, 8, 11),
+            )
         )
         is None
     )
@@ -194,3 +202,55 @@ def test_the_module_names_the_failure_it_prevents() -> None:
 
 def test_issue_4_is_the_provenance() -> None:
     assert "Issue 4" in (module.__doc__ or "")
+
+
+def test_an_unanswered_request_inside_its_window_is_not_a_finding() -> None:
+    """The second CodeRabbit finding on PR 144.
+
+    A request made yesterday with no reply yet produced "silence is not an
+    attempt". That accused a carrier still inside its 541.8(b) window. The model
+    had no reference date to compare against, so silence was always overdue.
+    """
+    assert (
+        check_resolution_attempt(
+            ResolutionAttempt(
+                requested_on=date(2026, 7, 21), answered_on=None, as_of=date(2026, 7, 22)
+            )
+        )
+        is None
+    )
+    assert (
+        check_resolution_attempt(
+            ResolutionAttempt(
+                requested_on=date(2026, 7, 21), answered_on=None, as_of=date(2026, 9, 1)
+            )
+        )
+        is not None
+    )
+
+
+def test_an_answer_after_the_agreed_extension_is_a_finding() -> None:
+    """The first CodeRabbit finding on PR 144.
+
+    The old boolean cleared every carrier with an agreement, including one that
+    broke the agreed deadline. Agreed to day 45, answered day 90: the extension
+    moved the ceiling, it did not remove it.
+    """
+    finding = check_resolution_attempt(
+        ResolutionAttempt(
+            requested_on=date(2026, 7, 21),
+            answered_on=date(2026, 10, 19),
+            as_of=date(2026, 10, 20),
+            extended_to=date(2026, 9, 4),
+        )
+    )
+    assert finding is not None
+    assert "mutually extended deadline" in finding.detail
+    assert "2026-09-04" in finding.detail
+
+
+def test_as_of_is_required_not_defaulted_to_today() -> None:
+    """A check evaluated "now" gives a different answer every day it runs, and a
+    finding that appears and disappears with the calendar is not a finding."""
+    params = inspect.signature(ResolutionAttempt).parameters
+    assert params["as_of"].default is inspect.Parameter.empty
