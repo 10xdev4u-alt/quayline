@@ -253,6 +253,224 @@ RESTART_BY_LOCUS: dict[HoldLocus, RestartClock] = {
     HoldLocus.OUTSIDE_TERMINAL: RestartClock.DETENTION,
 }
 
+
+#: Rules D06 (demurrage waiver) and D07 (detention waiver), valid from
+#: 2022-07-08. Hapag will not charge line demurrage or marine terminal storage
+#: for import truck carrier-haulage containers through US ports, provided all of
+#: the five conditions below. An express, published, contractual waiver right:
+#: high confidence and low fight, because the carrier states the conditions
+#: itself.
+WAIVER_RULES = ("D06", "D07")
+WAIVER_VALID_FROM = "2022-07-08"
+WAIVER_SOURCE = "Hapag US D&D Policies, Rules D06 and D07"
+
+
+class WaiverCondition(StrEnum):
+    """The five conditions, all required."""
+
+    #: Delivery order submitted 5 days before vessel arrival.
+    DELIVERY_ORDER_TIMELY = "delivery order submitted 5 days before vessel arrival"
+    #: Customs clearance with no regulatory restrictions 5 days before free time
+    #: expires.
+    CUSTOMS_CLEARED = "customs cleared with no restrictions 5 days before free time ends"
+    #: Credit or freight payment received.
+    PAYMENT_RECEIVED = "credit or freight payment received"
+    #: Original bill of lading received.
+    ORIGINAL_BOL = "original bill of lading received"
+    #: Merchant facility available when the trucker calls, with an appointment no
+    #: later than 48 hours after Hapag's motor carrier contact.
+    FACILITY_AVAILABLE = "merchant facility available, appointment within 48 hours"
+
+
+class ConditionState(StrEnum):
+    """What we know about one condition.
+
+    Three states, because "cannot be evidenced" is different from "failed". A
+    failed condition kills the waiver. An unevidenced one means we do not know,
+    and a waiver claimed on unknown facts is a claim the respondent dismantles by
+    asking for the document.
+    """
+
+    MET = "met"
+    UNMET = "unmet"
+    UNEVIDENCED = "cannot be evidenced"
+
+
+@dataclass(frozen=True, slots=True)
+class WaiverEvidence:
+    """The facts for one container, as far as we hold them."""
+
+    delivery_order_days_before_arrival: int | None = None
+    customs_cleared_days_before_free_time_end: int | None = None
+    customs_has_restrictions: bool = False
+    payment_received: bool | None = None
+    original_bol_received: bool | None = None
+    facility_available: bool | None = None
+    appointment_hours_after_contact: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ConditionResult:
+    """One condition, evaluated."""
+
+    condition: WaiverCondition
+    state: ConditionState
+    detail: str = ""
+
+
+#: The five-day thresholds in Rules D06/D07. Named because a bare 5 in a
+#: comparison is a number nobody can trace to the rule, and the rule is the whole
+#: authority here.
+DELIVERY_ORDER_DAYS = 5
+CUSTOMS_CLEAR_DAYS = 5
+
+#: The appointment window in hours. 48 hours after Hapag's motor carrier contact.
+APPOINTMENT_HOURS = 48
+
+
+def _delivery_order(evidence: WaiverEvidence) -> ConditionResult:
+    condition = WaiverCondition.DELIVERY_ORDER_TIMELY
+    days = evidence.delivery_order_days_before_arrival
+    if days is None:
+        return ConditionResult(condition, ConditionState.UNEVIDENCED, "no delivery order date held")
+    if days >= DELIVERY_ORDER_DAYS:
+        return ConditionResult(
+            condition, ConditionState.MET, f"submitted {days} days before arrival"
+        )
+    return ConditionResult(
+        condition,
+        ConditionState.UNMET,
+        f"submitted {days} days before arrival, need {DELIVERY_ORDER_DAYS}",
+    )
+
+
+def _customs(evidence: WaiverEvidence) -> ConditionResult:
+    condition = WaiverCondition.CUSTOMS_CLEARED
+    days = evidence.customs_cleared_days_before_free_time_end
+    if days is None:
+        return ConditionResult(condition, ConditionState.UNEVIDENCED, "no clearance date held")
+    if evidence.customs_has_restrictions:
+        return ConditionResult(condition, ConditionState.UNMET, "regulatory restrictions apply")
+    if days >= CUSTOMS_CLEAR_DAYS:
+        return ConditionResult(
+            condition, ConditionState.MET, f"cleared {days} days before free time ends"
+        )
+    return ConditionResult(
+        condition, ConditionState.UNMET, f"cleared {days} days before, need {CUSTOMS_CLEAR_DAYS}"
+    )
+
+
+def _payment(evidence: WaiverEvidence) -> ConditionResult:
+    condition = WaiverCondition.PAYMENT_RECEIVED
+    if evidence.payment_received is None:
+        return ConditionResult(condition, ConditionState.UNEVIDENCED, "no payment record held")
+    if evidence.payment_received:
+        return ConditionResult(condition, ConditionState.MET, "credit or freight payment received")
+    return ConditionResult(
+        condition, ConditionState.UNMET, "no credit or freight payment on record"
+    )
+
+
+def _bol(evidence: WaiverEvidence) -> ConditionResult:
+    condition = WaiverCondition.ORIGINAL_BOL
+    if evidence.original_bol_received is None:
+        return ConditionResult(
+            condition, ConditionState.UNEVIDENCED, "no bill of lading receipt held"
+        )
+    if evidence.original_bol_received:
+        return ConditionResult(condition, ConditionState.MET, "original bill of lading received")
+    return ConditionResult(condition, ConditionState.UNMET, "original bill of lading not received")
+
+
+def _facility(evidence: WaiverEvidence) -> ConditionResult:
+    condition = WaiverCondition.FACILITY_AVAILABLE
+    hours = evidence.appointment_hours_after_contact
+    if evidence.facility_available is None and hours is None:
+        return ConditionResult(
+            condition, ConditionState.UNEVIDENCED, "no facility or appointment record held"
+        )
+    if evidence.facility_available is False:
+        return ConditionResult(
+            condition, ConditionState.UNMET, "merchant facility was not available"
+        )
+    if hours is None:
+        return ConditionResult(
+            condition, ConditionState.UNEVIDENCED, "facility available but no appointment time held"
+        )
+    if hours <= APPOINTMENT_HOURS:
+        return ConditionResult(condition, ConditionState.MET, f"appointment {hours}h after contact")
+    return ConditionResult(
+        condition,
+        ConditionState.UNMET,
+        f"appointment {hours}h after contact, limit {APPOINTMENT_HOURS}",
+    )
+
+
+_EVALUATORS = {
+    WaiverCondition.DELIVERY_ORDER_TIMELY: _delivery_order,
+    WaiverCondition.CUSTOMS_CLEARED: _customs,
+    WaiverCondition.PAYMENT_RECEIVED: _payment,
+    WaiverCondition.ORIGINAL_BOL: _bol,
+    WaiverCondition.FACILITY_AVAILABLE: _facility,
+}
+
+
+def _evaluate(condition: WaiverCondition, evidence: WaiverEvidence) -> ConditionResult:
+    """Each condition as a predicate over the evidence.
+
+    Dispatched through a table rather than a chain, so a sixth condition is a
+    function and a row rather than another branch in a function that already has
+    too many. A missing fact is UNEVIDENCED, never assumed in either direction.
+    """
+    return _EVALUATORS[condition](evidence)
+
+
+@dataclass(frozen=True, slots=True)
+class WaiverFinding:
+    """Whether the waiver applies, with every condition reported.
+
+    `applies` is True only when all five are MET. Anything else — one UNMET, one
+    UNEVIDENCED — and the finding does not raise, because the carrier states all
+    five as required and a waiver on four of five is a waiver the carrier never
+    offered.
+    """
+
+    applies: bool
+    conditions: tuple[ConditionResult, ...]
+    rules: tuple[str, ...] = ("D06", "D07")
+    valid_from: str = "2022-07-08"
+    source: str = "Hapag US D&D Policies, Rules D06 and D07"
+
+    @property
+    def satisfied(self) -> tuple[ConditionResult, ...]:
+        return tuple(c for c in self.conditions if c.state is ConditionState.MET)
+
+    @property
+    def failed(self) -> tuple[ConditionResult, ...]:
+        return tuple(c for c in self.conditions if c.state is ConditionState.UNMET)
+
+    @property
+    def unevidenced(self) -> tuple[ConditionResult, ...]:
+        return tuple(c for c in self.conditions if c.state is ConditionState.UNEVIDENCED)
+
+    def report(self) -> str:
+        lines = [
+            f"Hapag Rules {', '.join(self.rules)} (valid from {self.valid_from}): "
+            f"{'waiver applies' if self.applies else 'waiver does not apply'}."
+        ]
+        for result in self.conditions:
+            lines.append(f"  [{result.state.value}] {result.condition.value} — {result.detail}")
+        return "\n".join(lines)
+
+
+def check_waiver(evidence: WaiverEvidence) -> WaiverFinding:
+    """Evaluate all five conditions. Pure, total, and explicit about what is
+    unknown."""
+    results = tuple(_evaluate(condition, evidence) for condition in WaiverCondition)
+    applies = all(r.state is ConditionState.MET for r in results)
+    return WaiverFinding(applies=applies, conditions=results)
+
+
 __all__ = [
     "CONDITION",
     "GENERAL_TERM",
@@ -262,9 +480,18 @@ __all__ = [
     "OUTSIDE_TERMINAL_TERM",
     "RECOVERY_LIMIT",
     "RESTART_BY_LOCUS",
+    "WAIVER_RULES",
+    "WAIVER_SOURCE",
+    "WAIVER_VALID_FROM",
+    "ConditionResult",
+    "ConditionState",
     "Finding",
     "HoldLocus",
     "HoldWindow",
     "RestartClock",
+    "WaiverCondition",
+    "WaiverEvidence",
+    "WaiverFinding",
+    "check_waiver",
     "customs_hold",
 ]

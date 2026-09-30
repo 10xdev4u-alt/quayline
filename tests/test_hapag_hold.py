@@ -21,9 +21,16 @@ from quayline.tariffs.hapag import (
     OUTSIDE_TERMINAL_TERM,
     RECOVERY_LIMIT,
     RESTART_BY_LOCUS,
+    WAIVER_RULES,
+    WAIVER_SOURCE,
+    WAIVER_VALID_FROM,
+    ConditionState,
     HoldLocus,
     HoldWindow,
     RestartClock,
+    WaiverCondition,
+    WaiverEvidence,
+    check_waiver,
     customs_hold,
 )
 
@@ -291,3 +298,132 @@ def test_findings_and_windows_are_immutable() -> None:
         finding.recovery_limit = "recovers everything"  # type: ignore[misc]
     with pytest.raises(AttributeError):
         HOLD.start = date(2030, 1, 1)  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------- issue 15
+# Five conditions, all required, Rules D06 and D07.
+
+
+def test_all_five_conditions_met_raises_the_waiver() -> None:
+
+    finding = check_waiver(
+        WaiverEvidence(
+            delivery_order_days_before_arrival=6,
+            customs_cleared_days_before_free_time_end=7,
+            payment_received=True,
+            original_bol_received=True,
+            facility_available=True,
+            appointment_hours_after_contact=24,
+        )
+    )
+    assert finding.applies is True
+    assert len(finding.satisfied) == 5
+    assert finding.failed == ()
+    assert finding.unevidenced == ()
+
+
+def test_failing_any_one_condition_kills_the_waiver() -> None:
+    """Criterion three. The carrier states all five as required, and a waiver on
+    four of five is a waiver the carrier never offered."""
+
+    assert len(WaiverCondition) == 5
+    base: dict[str, object] = {
+        "delivery_order_days_before_arrival": 6,
+        "customs_cleared_days_before_free_time_end": 7,
+        "payment_received": True,
+        "original_bol_received": True,
+        "facility_available": True,
+        "appointment_hours_after_contact": 24,
+    }
+    breakers: dict[str, dict[str, object]] = {
+        "late delivery order": {"delivery_order_days_before_arrival": 3},
+        "late clearance": {"customs_cleared_days_before_free_time_end": 2},
+        "restrictions": {"customs_has_restrictions": True},
+        "no payment": {"payment_received": False},
+        "no BOL": {"original_bol_received": False},
+        "no facility": {"facility_available": False},
+        "late appointment": {"appointment_hours_after_contact": 72},
+    }
+    for name, change in breakers.items():
+        fields = dict(base)
+        fields.update(change)
+        finding = check_waiver(WaiverEvidence(**fields))  # type: ignore[arg-type]
+        assert finding.applies is False, name
+        assert len(finding.failed) == 1, (name, finding.failed)
+
+
+def test_an_unevidenced_condition_is_not_a_failed_one() -> None:
+    """A missing fact is UNEVIDENCED, never assumed. Assuming it met would claim a
+    waiver on facts we do not hold; assuming it unmet would discard one the carrier
+    owes."""
+
+    finding = check_waiver(WaiverEvidence())
+    assert finding.applies is False
+    assert len(finding.unevidenced) == 5
+    assert finding.failed == ()
+    assert all(c.state is ConditionState.UNEVIDENCED for c in finding.conditions)
+
+
+def test_the_boundary_values_are_exact() -> None:
+    """5 days and 48 hours are the rule as published. An off-by-one either claims a
+    waiver the carrier did not offer or discards one it owes."""
+
+    def states(**kw: object) -> dict[str, ConditionState]:
+        base: dict[str, object] = {
+            "delivery_order_days_before_arrival": 6,
+            "customs_cleared_days_before_free_time_end": 7,
+            "payment_received": True,
+            "original_bol_received": True,
+            "facility_available": True,
+            "appointment_hours_after_contact": 24,
+        }
+        base.update(kw)
+        finding = check_waiver(WaiverEvidence(**base))  # type: ignore[arg-type]
+        return {c.condition: c.state for c in finding.conditions}
+
+    assert (
+        states(delivery_order_days_before_arrival=5)[WaiverCondition.DELIVERY_ORDER_TIMELY]
+        is ConditionState.MET
+    )
+    assert (
+        states(delivery_order_days_before_arrival=4)[WaiverCondition.DELIVERY_ORDER_TIMELY]
+        is ConditionState.UNMET
+    )
+    assert (
+        states(appointment_hours_after_contact=48)[WaiverCondition.FACILITY_AVAILABLE]
+        is ConditionState.MET
+    )
+    assert (
+        states(appointment_hours_after_contact=49)[WaiverCondition.FACILITY_AVAILABLE]
+        is ConditionState.UNMET
+    )
+
+
+def test_provenance_and_rule_number_travel_with_the_finding() -> None:
+    """Criterion four."""
+    finding = check_waiver(WaiverEvidence())
+    assert finding.rules == WAIVER_RULES == ("D06", "D07")
+    assert finding.valid_from == WAIVER_VALID_FROM == "2022-07-08"
+    assert finding.source == WAIVER_SOURCE
+    assert "D06" in finding.report() and "2022-07-08" in finding.report()
+
+
+def test_the_report_names_every_condition_and_its_state() -> None:
+
+    report = check_waiver(WaiverEvidence(delivery_order_days_before_arrival=3)).report()
+    assert "waiver does not apply" in report
+    assert report.count("[met]") == 0
+    assert "[unmet]" in report
+    assert "[cannot be evidenced]" in report
+
+
+def test_the_finding_is_immutable() -> None:
+
+    finding = check_waiver(WaiverEvidence())
+    with pytest.raises(AttributeError):
+        finding.applies = True  # type: ignore[misc]
+
+
+def test_check_waiver_is_deterministic() -> None:
+
+    assert check_waiver(WaiverEvidence()) == check_waiver(WaiverEvidence())
