@@ -28,7 +28,8 @@ from quayline.engine.settings import CONFIG_PATH, SettingsError, load_tolerance
 from quayline.engine.settings import TOLERANCE as SETTINGS
 from quayline.models.invoice import CITE_CHARGED_DATES, CITE_FREE_TIME_START
 from quayline.tariffs.blocks import RateBlock, Tier, TierError
-from quayline.tariffs.registry import Registry, UnresolvedRuleError
+from quayline.tariffs.registry import Registry
+from quayline.tariffs.resolution import RateQuery
 
 D = Decimal
 
@@ -59,10 +60,13 @@ def maersk_block(**overrides: object) -> RateBlock:
 
 def test_a_declared_rule_resolves_to_a_block() -> None:
     registry = Registry((maersk_block(),))
-    block = registry.resolve("Maersk US Default Dry", "2026-06-15")
-    assert block.rule == "Maersk US Default Dry"
-    assert block.free_days == 4
-    assert block.carrier == "Maersk"
+    got = registry.resolve(RateQuery(reference="Maersk US Default Dry", on="2026-06-15"))
+    assert got.resolved
+    assert got.warnings == ()
+    assert got.block is not None
+    assert got.block.rule == "Maersk US Default Dry"
+    assert got.block.free_days == 4
+    assert got.block.carrier == "Maersk"
 
 
 def test_resolution_normalises_case_and_whitespace_only() -> None:
@@ -72,10 +76,12 @@ def test_resolution_normalises_case_and_whitespace_only() -> None:
         "  MAERSK   US Default Dry  ",
         "Maersk US Default Dry",
     ):
-        assert registry.resolve(reference, "2026-06-15").rule == "Maersk US Default Dry"
+        got = registry.resolve(RateQuery(reference=reference, on="2026-06-15"))
+        assert got.block is not None
+        assert got.block.rule == "Maersk US Default Dry"
 
 
-def test_an_unheld_rule_raises_and_says_it_is_our_hole_not_the_carriers_fault() -> None:
+def test_an_unheld_rule_says_it_is_our_hole_not_the_carriers_fault() -> None:
     """The distinction that keeps a lookup from becoming an accusation.
 
     A fuzzy match would compare the demand against a rate the carrier never said
@@ -83,23 +89,27 @@ def test_an_unheld_rule_raises_and_says_it_is_our_hole_not_the_carriers_fault() 
     this repository has spent eight issues auditing out, in one line.
     """
     registry = Registry((maersk_block(),))
-    with pytest.raises(UnresolvedRuleError) as excinfo:
-        registry.resolve("CMA CGM US T1", "2026-06-15")
-    message = str(excinfo.value)
+    got = registry.resolve(RateQuery(reference="CMA CGM US T1", on="2026-06-15"))
+    assert got.resolved is False
+    assert got.block is None
+    message = got.withheld_reason
     assert "not a finding against the carrier" in message
     assert "Maersk US Default Dry" in message, "the message must say what we do hold"
 
 
 def test_a_rule_held_but_not_in_force_reports_its_effective_window() -> None:
     registry = Registry((maersk_block(effective_from="2026-01-15", effective_to="2026-06-30"),))
-    with pytest.raises(UnresolvedRuleError, match="not in force"):
-        registry.resolve("Maersk US Default Dry", "2026-07-15")
+    got = registry.resolve(RateQuery(reference="Maersk US Default Dry", on="2026-07-15"))
+    assert got.block is None
+    assert "not in force" in got.withheld_reason
+    assert "2026-01-15..2026-06-30" in got.withheld_reason
 
 
 def test_overlapping_blocks_are_reported_as_our_data_error() -> None:
     registry = Registry((maersk_block(), maersk_block(source="second copy")))
-    with pytest.raises(UnresolvedRuleError, match="overlapping data in this repository"):
-        registry.resolve("Maersk US Default Dry", "2026-06-15")
+    got = registry.resolve(RateQuery(reference="Maersk US Default Dry", on="2026-06-15"))
+    assert got.block is None
+    assert "overlapping data in this repository" in got.withheld_reason
 
 
 # ---------------------------------------------------------------- criterion 2
