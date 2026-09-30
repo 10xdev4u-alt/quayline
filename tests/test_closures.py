@@ -24,6 +24,7 @@ from quayline.calendars.closures import (
 SATURDAY = ClosureType.WEEKEND
 HOLIDAY = ClosureType.HOLIDAY
 SCHEDULED = ClosureType.SCHEDULED_CLOSURE
+PARTIAL = ClosureType.PARTIAL_SHIFT
 UNSCHEDULED = ClosureType.UNSCHEDULED_SHUTOUT
 APPOINTMENT = ClosureType.APPOINTMENT_UNAVAILABLE
 CUSTOM = ClosureType.CUSTOM
@@ -34,7 +35,10 @@ CUSTOM = ClosureType.CUSTOM
 # custom.
 
 
-def test_the_five_named_types_exist() -> None:
+def test_the_named_types_exist() -> None:
+    """Renamed from "five" when PARTIAL_SHIFT arrived, because a count in a test
+    name is a test that has to be renamed every time the enum grows, which is how
+    names stop meaning anything."""
     named = {t.value for t in ClosureType}
     assert named == {
         "weekend",
@@ -42,6 +46,7 @@ def test_the_five_named_types_exist() -> None:
         "scheduled_closure",
         "unscheduled_shutout",
         "appointment_unavailable",
+        "partial_shift",
         "custom",
     }
 
@@ -54,7 +59,7 @@ def test_scheduled_and_unscheduled_are_separate_members() -> None:
     "the terminal was shut", which is the only thing a boolean could see.
     """
     assert SCHEDULED is not UNSCHEDULED
-    assert len(ALL_CLOSURE_TYPES) == 6
+    assert len(ALL_CLOSURE_TYPES) == 7
     assert all(isinstance(t, ClosureType) for t in ALL_CLOSURE_TYPES)
 
 
@@ -138,9 +143,9 @@ def test_the_windows_differ_where_the_carrier_makes_them_differ() -> None:
 
 def test_unmentioned_types_are_visible() -> None:
     """So an unmodelled type is never silently charged by default."""
-    assert HAPAG_US.unmentioned_types() == frozenset({SATURDAY, APPOINTMENT, CUSTOM})
+    assert HAPAG_US.unmentioned_types() == frozenset({SATURDAY, APPOINTMENT, CUSTOM, PARTIAL})
     assert MAERSK_US.unmentioned_types() == frozenset(
-        {SATURDAY, HOLIDAY, SCHEDULED, UNSCHEDULED, CUSTOM}
+        {SATURDAY, HOLIDAY, SCHEDULED, UNSCHEDULED, CUSTOM, PARTIAL}
     )
     assert CMA_CGM_US_CALIFORNIA.unmentioned_types() == frozenset()
 
@@ -367,3 +372,44 @@ def test_the_production_path_does_not_opt_in() -> None:
     engine and only a caller who has read the note can reach it."""
     source = inspect.getsource(freetime)
     assert "include_inferred" not in source
+
+
+# ---------------------------------------------------------------- issue 24
+# A partial shift counts as a full working day and a full billable day.
+
+
+def test_partial_shift_is_a_closure_type() -> None:
+    """So the terminal having partially closed is visible rather than smoothed into
+    "open". A flag on a working day would let a caller treat partially open as open
+    without reading ONE's rule."""
+    assert ClosureType.PARTIAL_SHIFT.value == "partial_shift"
+    assert ClosureType.PARTIAL_SHIFT in ALL_CLOSURE_TYPES
+
+
+def test_no_policy_forgives_a_partial_shift_except_the_blanket_one() -> None:
+    """ONE counts it as a full working day, and as a full billable day once free
+    time has expired. Forgiving it would contradict the rule."""
+    forgiving = [
+        name
+        for name, policy in POLICIES.items()
+        if ClosureType.PARTIAL_SHIFT in policy.extends_free_time
+        or ClosureType.PARTIAL_SHIFT in policy.excluded_after_free_time
+    ]
+    assert forgiving == ["CMA CGM US, California gateway"], forgiving
+
+
+def test_the_blanket_forgiveness_follows_from_the_stated_policy() -> None:
+    """CMA CGM California forgives every closure type, so a new member is forgiven
+    there too. That follows from the stated policy rather than from a decision
+    about partial shifts, and the UNVERIFIED marker on the policy is what covers
+    whether the policy itself is right."""
+    cma = POLICIES["CMA CGM US, California gateway"]
+    assert cma.verified is False
+    assert ClosureType.PARTIAL_SHIFT in cma.extends_free_time
+
+
+def test_hapag_and_maersk_do_not_forgive_a_partial_shift() -> None:
+    for name in ("Hapag-Lloyd US", "Maersk US"):
+        policy = POLICIES[name]
+        assert ClosureType.PARTIAL_SHIFT not in policy.extends_free_time, name
+        assert ClosureType.PARTIAL_SHIFT not in policy.excluded_after_free_time, name
