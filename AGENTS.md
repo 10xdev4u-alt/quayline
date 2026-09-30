@@ -99,6 +99,27 @@ test first. For engine work that means a test that encodes the real tariff numbe
 from the real carrier PDF. If the idea cannot be shown to work on one real case,
 it does not get built for the general case.
 
+### Branch naming
+
+One branch per issue, named `<area>/<issue-number>-<slug>`:
+
+```
+ingest/40-pdf-text-layer
+engine/112-opt-in-closure-policy
+filing/63-carrier-checklists
+platform/126-ignore-tool-artifacts
+```
+
+The area prefix comes from the issue's labels. An issue labelled `platform,docs`
+is a `platform` issue, and the second label does not make it two branches.
+
+Recorded in issue 126. A session left two branches, `platform/92-reviewer-disposition`
+and `docs/92-reviewer-disposition`, for one issue, both pointing at `main` with no
+commits. Two names for one piece of work is the ambiguity section three exists to
+prevent, and it happens anyway when nobody writes the name down. A branch that
+points at `main` also looks exactly like a branch with work on it, which is why
+stage eleven removes them.
+
 ### Stage 5. Build
 
 Smallest change that closes the issue. No drive-by refactors. No unrelated

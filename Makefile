@@ -2,7 +2,7 @@
 #
 #   make install    create the venv, install the dev group, wire the git hooks
 #   make hooks      re-wire the git hooks after a fresh clone
-#   make validate   the gate: pytest, ruff check, ruff format check, mypy
+#   make validate   the gate: pytest, ruff check, ruff format check, mypy, index
 #   make format     apply ruff formatting and the autofixable lint rules
 #   make hooks      install the commit-msg and pre-push hooks
 #   make clean      remove build and cache artifacts
@@ -33,6 +33,33 @@ validate:
 	$(RUFF) check .
 	$(RUFF) format --check .
 	$(MYPY)
+	$(MAKE) index
+
+# Issue 126. Nothing from a tool's machine local state may be staged.
+#
+# This lives in the gate and not in pytest on purpose. A test suite runs *during*
+# the commit that creates the state it is asserting about, so a pytest assertion
+# about a clean index fires on the commit that adds the test, and a test that fails
+# on correct work gets switched off. The gate runs in pre-push and in CI, where
+# the index is settled, which is the only place a claim about the index is true.
+#
+# It is a separate target as well as a gate step so a contributor can run exactly
+# this check and nothing else.
+TOOL_DIRS := .freebuff .codex .agents .continue .cursor .cline
+
+index:
+	@fail=0; \
+	for d in $(TOOL_DIRS); do \
+		staged=$$(git diff --cached --name-only | grep -c "^$$d/" || true); \
+		if [ "$$staged" != "0" ]; then \
+			echo "staged tool artifact(s) under $$d/:"; \
+			git diff --cached --name-only | grep "^$$d/"; \
+			fail=1; \
+		fi; \
+	done; \
+	for f in $$($(PYTEST) --collect-only -q 2>/dev/null >/dev/null; echo .gitignore); do :; done; \
+	if [ $$fail != "0" ]; then exit 1; fi; \
+	echo "index clean of tool artifacts"
 
 format:
 	$(RUFF) check --fix .
