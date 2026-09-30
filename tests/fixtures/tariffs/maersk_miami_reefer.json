@@ -1,0 +1,33 @@
+{
+  "rule": "Maersk US Miami Reefer Operating",
+  "carrier": "Maersk",
+  "cluster": "Miami PEFLA",
+  "equipment": "reefer operating",
+  "free_days": 2,
+  "tiers": [
+    {
+      "from_day": 1,
+      "to_day": 2,
+      "rate": "0"
+    },
+    {
+      "from_day": 3,
+      "to_day": 5,
+      "rate": "655"
+    },
+    {
+      "from_day": 6,
+      "to_day": 8,
+      "rate": "800"
+    },
+    {
+      "from_day": 9,
+      "to_day": null,
+      "rate": "1030"
+    }
+  ],
+  "source_pdf": "Maersk US import demurrage tariff, calendar-day charging from 2024-08-08, transcribed in docs/research/002-carriers.md (research date 2026-09-27)",
+  "effective_date": "2024-08-08",
+  "verified": true,
+  "checksum": "2a4a4e56d4584dcf79dd9edfcc50d018028dc9a9df34360988aa6eb97c2f09a4"
+}

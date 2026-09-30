@@ -1,0 +1,33 @@
+{
+  "rule": "Maersk US Default Reefer Operating",
+  "carrier": "Maersk",
+  "cluster": "Default",
+  "equipment": "reefer operating",
+  "free_days": 2,
+  "tiers": [
+    {
+      "from_day": 1,
+      "to_day": 2,
+      "rate": "0"
+    },
+    {
+      "from_day": 3,
+      "to_day": 5,
+      "rate": "490"
+    },
+    {
+      "from_day": 6,
+      "to_day": 9,
+      "rate": "590"
+    },
+    {
+      "from_day": 10,
+      "to_day": null,
+      "rate": "640"
+    }
+  ],
+  "source_pdf": "Maersk US import demurrage tariff, calendar-day charging from 2024-08-08, transcribed in docs/research/002-carriers.md (research date 2026-09-27)",
+  "effective_date": "2024-08-08",
+  "verified": true,
+  "checksum": "6e1b3ae38cc82f667c84b2dc1c268b023c9f29b0f5d22ded5c4c222f21619f17"
+}

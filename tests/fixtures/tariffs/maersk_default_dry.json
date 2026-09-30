@@ -1,0 +1,33 @@
+{
+  "rule": "Maersk US Default Dry",
+  "carrier": "Maersk",
+  "cluster": "Default",
+  "equipment": "40 dry",
+  "free_days": 4,
+  "tiers": [
+    {
+      "from_day": 1,
+      "to_day": 4,
+      "rate": "0"
+    },
+    {
+      "from_day": 5,
+      "to_day": 8,
+      "rate": "300"
+    },
+    {
+      "from_day": 9,
+      "to_day": 13,
+      "rate": "345"
+    },
+    {
+      "from_day": 14,
+      "to_day": null,
+      "rate": "395"
+    }
+  ],
+  "source_pdf": "Maersk US import demurrage tariff, calendar-day charging from 2024-08-08, transcribed in docs/research/002-carriers.md (research date 2026-09-27)",
+  "effective_date": "2024-08-08",
+  "verified": true,
+  "checksum": "ea231ddc45159e833c6121d03e4a5f974dfebf511660620ac9447d749cb8ef23"
+}

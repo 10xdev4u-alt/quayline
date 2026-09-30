@@ -5,6 +5,8 @@
 #   make validate   the gate: pytest, ruff check, ruff format check, mypy, index
 #   make format     apply ruff formatting and the autofixable lint rules
 #   make repo-state report live collaborator and branch protection state, change nothing
+#   make fixtures-checksum
+#     recompute every tariff fixture checksum after a deliberate transcription edit
 #   make clean      remove build and cache artifacts
 
 PY      := .venv/bin/python
@@ -78,6 +80,12 @@ hooks:
 # on purpose: a setup step that silently grants access is a different risk.
 repo-state:
 	scripts/verify_repository_state.sh
+
+# Issue 39. Recompute every fixture checksum after a deliberate transcription edit.
+# This is a write operation, so it is not part of validate. Run it, read the diff,
+# and only then commit.
+fixtures-checksum:
+	$(PY) scripts/recompute_fixture_checksums.py
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov

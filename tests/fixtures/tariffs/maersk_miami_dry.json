@@ -1,0 +1,38 @@
+{
+  "rule": "Maersk US Miami Dry",
+  "carrier": "Maersk",
+  "cluster": "Miami PEFLA",
+  "equipment": "40 dry",
+  "free_days": 4,
+  "tiers": [
+    {
+      "from_day": 1,
+      "to_day": 4,
+      "rate": "0"
+    },
+    {
+      "from_day": 5,
+      "to_day": 8,
+      "rate": "360"
+    },
+    {
+      "from_day": 9,
+      "to_day": 13,
+      "rate": "455"
+    },
+    {
+      "from_day": 14,
+      "to_day": 33,
+      "rate": "570"
+    },
+    {
+      "from_day": 34,
+      "to_day": null,
+      "rate": "705"
+    }
+  ],
+  "source_pdf": "Maersk US import demurrage tariff, calendar-day charging from 2024-08-08, transcribed in docs/research/002-carriers.md (research date 2026-09-27)",
+  "effective_date": "2024-08-08",
+  "verified": true,
+  "checksum": "88f65bb97edf1e28c44b6685b4c423219317a45cfd1549cd07d2d7cbe47a75a4"
+}
