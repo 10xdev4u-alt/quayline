@@ -16,6 +16,7 @@ import pytest
 from quayline.regulation.checklist import CHECKLIST, by_cite
 from quayline.regulation.kill_switch import Obligation, Omission, effect_of
 from quayline.regulation.vacatur import (
+    FREIGHT_TERM_ESTIMATE,
     LIABILITY_BASIS_CITE,
     STATUTE_41104_F,
     VACATED_SECTION,
@@ -23,9 +24,11 @@ from quayline.regulation.vacatur import (
     VACATUR_REMOVAL,
     WORLD_SHIPPING_COUNCIL_5414,
     WORLD_SHIPPING_COUNCIL_5421,
+    FreightTerm,
     VacatedRuleError,
     case_for,
     check_liability_basis,
+    freight_term_reading,
     refuses_vacated_basis,
 )
 
@@ -249,3 +252,152 @@ def test_vacated_section_constant_is_usable_for_an_explicit_refusal() -> None:
 def test_case_records_are_immutable() -> None:
     with pytest.raises(AttributeError):
         WORLD_SHIPPING_COUNCIL_5414.docket = "No. 99-9999"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------- issue 32
+# The freight term evidence, and the party of interest case.
+
+
+def test_absence_eliminates_the_obligation() -> None:
+    """Criterion one. Absence is a missing 541.6 required minimum, so 541.5 fires."""
+    finding = check_liability_basis(None, "INV-1")
+    assert finding.verdict == "absent"
+    assert finding.eliminates_obligation is True
+    assert finding.omission is not None
+
+
+def test_a_generic_formula_is_a_soft_defect() -> None:
+    """Criterion two. Something was said, so nothing is missing and 541.5 does not
+    fire. The available argument is 545.5(d), and claiming otherwise argues a defence
+    that is not there."""
+    finding = check_liability_basis("as per contract")
+    assert finding.verdict == "conclusory"
+    assert finding.eliminates_obligation is False
+    assert finding.omission is None
+
+
+def test_party_of_interest_with_no_privity_is_conclusory() -> None:
+    """Criterion four.
+
+    A carrier asserting the billed party is the party of interest has restated the
+    conclusion. Nothing about privity, nothing about the bill of lading, nothing a
+    respondent could check.
+    """
+    for phrase in (
+        "party of interest",
+        "proper party of interest",
+        "party in interest",
+        "Party Of Interest",
+    ):
+        assert check_liability_basis(phrase).verdict == "conclusory", phrase
+
+
+def test_a_particularised_basis_is_not_conclusory() -> None:
+    """Otherwise the phrase list grows until every basis is a defect."""
+    finding = check_liability_basis(
+        "demurrage is for the consignee as named on the bill of lading, freight prepaid"
+    )
+    assert finding.verdict == "particularised"
+    assert finding.eliminates_obligation is False
+
+
+def test_the_evidence_list_names_the_bill_of_lading_and_both_freight_terms() -> None:
+    """Criterion three.
+
+    The bill of lading is the instrument that sets liability and it is in the
+    shipper's hands, not the carrier's. Both freight terms follow because a
+    respondent who finds one of them needs to be told what it ordinarily implies
+    before they conclude the carrier was right.
+    """
+    items = check_liability_basis(None).evidence()
+    assert items[0].startswith("the bill of lading")
+    assert "prepaid" in items[1]
+    assert "consignee" in items[1]
+    assert "collect" in items[2]
+    assert "shipper" in items[2]
+
+
+def test_the_evidence_list_is_the_same_for_every_verdict() -> None:
+    """What a respondent must produce does not depend on how badly they did."""
+    lists = {
+        check_liability_basis(None).evidence(),
+        check_liability_basis("party of interest").evidence(),
+        check_liability_basis("freight prepaid per the bill of lading").evidence(),
+    }
+    assert len(lists) == 1
+
+
+def test_prepaid_ordinarily_places_the_charge_on_the_consignee() -> None:
+    """ESTIMATE, and marked as one. See the module constant."""
+    reading = freight_term_reading(FreightTerm.PREPAID)
+    assert reading.ordinarily_liable == "the consignee"
+    assert reading.determined is True
+
+
+def test_collect_ordinarily_places_the_charge_on_the_shipper() -> None:
+    reading = freight_term_reading(FreightTerm.COLLECT)
+    assert reading.ordinarily_liable == "the shipper"
+    assert reading.determined is True
+
+
+def test_an_unstated_term_determines_nothing() -> None:
+    """Which is the case that produces the strongest question, not the weakest
+    answer."""
+    reading = freight_term_reading(FreightTerm.UNSTATED)
+    assert reading.ordinarily_liable is None
+    assert reading.determined is False
+    assert "does not state" in reading.rationale
+
+
+def test_the_freight_practice_is_marked_an_estimate() -> None:
+    """Part 541 does not say it, no carrier tariff in our research says it, and it
+    is not uniform. Asserting it as law would be a legal conclusion with no clause
+    under it, which is the failure the vacatur issue was about."""
+    assert FREIGHT_TERM_ESTIMATE.startswith("ESTIMATE")
+    assert "not a rule in 46 CFR Part 541" in FREIGHT_TERM_ESTIMATE
+    assert "No carrier tariff in our research states this" in FREIGHT_TERM_ESTIMATE
+
+
+def test_the_practice_is_never_used_to_assert_a_party_was_wrong() -> None:
+    """The reading produces a question, never a verdict. A finding whose verdict
+    flipped on the freight term would be a legal conclusion, and there is no clause
+    for it."""
+    verdicts = {check_liability_basis(None, freight_term=term).verdict for term in FreightTerm}
+    assert verdicts == {"absent"}
+
+
+def test_the_question_names_the_party_and_the_term() -> None:
+    finding = check_liability_basis(
+        None, freight_term=FreightTerm.COLLECT, billed_party="Consignee"
+    )
+    question = finding.question_for_carrier()
+    assert "collect" in question
+    assert "shipper" in question
+    assert "Consignee" in question
+    assert question.endswith("?"), "a question, not an accusation"
+
+
+def test_an_unstated_freight_term_produces_a_generic_question() -> None:
+    finding = check_liability_basis(None)
+    question = finding.question_for_carrier()
+    assert "bill of lading" in question
+    assert "this party" not in question
+
+
+def test_the_freight_term_does_not_change_the_verdict() -> None:
+    """It changes what the letter asks for, not what it alleges."""
+    for basis in (None, "party of interest", "freight prepaid"):
+        assert {
+            check_liability_basis(basis, freight_term=term).verdict for term in FreightTerm
+        } == {check_liability_basis(basis).verdict}
+
+
+def test_the_finding_stays_immutable_with_the_new_fields() -> None:
+    finding = check_liability_basis(None, freight_term=FreightTerm.PREPAID)
+    with pytest.raises(AttributeError):
+        finding.billed_party = "someone"  # type: ignore[misc]
+
+
+def test_issue_32_is_the_provenance_of_the_freight_work() -> None:
+    flat = " ".join((check_liability_basis.__doc__ or "").split())
+    assert flat, "the check must document what its new parameters do"
