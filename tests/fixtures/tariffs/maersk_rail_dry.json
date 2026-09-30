@@ -1,0 +1,33 @@
+{
+  "rule": "Maersk US Rail Dry",
+  "carrier": "Maersk",
+  "cluster": "Rail ramps",
+  "equipment": "40 dry",
+  "free_days": 3,
+  "tiers": [
+    {
+      "from_day": 1,
+      "to_day": 3,
+      "rate": "0"
+    },
+    {
+      "from_day": 4,
+      "to_day": 7,
+      "rate": "190"
+    },
+    {
+      "from_day": 8,
+      "to_day": 11,
+      "rate": "250"
+    },
+    {
+      "from_day": 12,
+      "to_day": null,
+      "rate": "280"
+    }
+  ],
+  "source_pdf": "Maersk US import demurrage tariff, calendar-day charging from 2024-08-08, transcribed in docs/research/002-carriers.md (research date 2026-09-27)",
+  "effective_date": "2024-08-08",
+  "verified": true,
+  "checksum": "73706b635d9b133b43374af5c4fa88bc3a77592df296638c9275cd1f53b8919e"
+}
