@@ -111,7 +111,40 @@ class DayBasisRule:
                 return basis
         return self.default
 
-    def is_working_day(self, day: date, terminal: str = "") -> bool:
+    def is_working_day(
+        self,
+        day: date,
+        terminal: str = "",
+        *,
+        appointments: frozenset[date] = frozenset(),
+        appointment_unavailable: frozenset[date] = frozenset(),
+    ) -> bool:
+        """Whether a day counts as a working day, including the appointment rule.
+
+        Issue 10, from the Maersk working-day definition effective 2026-06-20. The
+        rule cuts both ways and the two directions are different facts:
+
+        - A day the terminal restricted appointments and the customer held **no**
+          booking is chargeable. The closure was for lack of appointment demand,
+          and demand the customer did not make is not the terminal's failure.
+        - The **same** day, with a booking the customer held and could not use, is
+          not a working day. The customer did its part and the terminal did not.
+
+        So appointment unavailability alone changes nothing; it is the pairing with
+        a held booking that removes the day. A caller that passes appointments
+        without the unavailability set, or the reverse, gets the base answer, which
+        is the weekday rule and nothing else.
+
+        Partial closures are not a parameter here at all. Maersk's definition states
+        that a partial day closure counts as a full working day toward free time, so
+        there is nothing to decide per call. A half-open gate is an open gate, and
+        the day counts.
+        """
+        # The appointment rule only ever removes a working day, never adds one. A
+        # Sunday the terminal marked unavailable is still a Sunday, and returning True
+        # for it would invent a working day the tariff never granted.
+        if day in appointment_unavailable and day in appointments:
+            return False
         return day.weekday() in self.basis_for(terminal).working_weekdays()
 
     def weekly_closure_on(self, day: date, terminal: str = "") -> bool:
