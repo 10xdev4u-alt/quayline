@@ -9,16 +9,23 @@ from __future__ import annotations
 
 import pytest
 
+from quayline.engine.warnings import CODE_MSC_NO_TARIFF, warn
 from quayline.tariffs import msc as module
 from quayline.tariffs.msc import (
+    DIRECT_TARIFF_PORT,
     INSIDE_MARKERS,
     OUTSIDE_MARKERS,
+    PASS_THROUGH_TERMINALS,
     PORT_EVERGLADES_SOURCE,
     ChargeKind,
+    InvoicePair,
     NormalisedCharge,
+    is_pass_through,
     locus_in,
     normalise,
 )
+from quayline.tariffs.registry import Registry
+from quayline.tariffs.resolution import RateQuery
 
 # ---------------------------------------------------------------- criterion 2
 # An MSC import-detention line inside a terminal normalises to demurrage.
@@ -52,10 +59,6 @@ def test_the_title_is_ignored_not_overridden() -> None:
 def test_an_outside_terminal_charge_is_detention_whatever_the_title() -> None:
     got = normalise("IMPORT DEMURRAGE", "Equipment held at consignee premises beyond free time")
     assert got.kind is ChargeKind.DETENTION
-
-
-# ---------------------------------------------------------------- criterion 1
-# Charge type from the physical locus, never the line title.
 
 
 def test_a_title_with_no_narrative_is_unknown_not_demurrage() -> None:
@@ -157,3 +160,104 @@ def test_the_port_everglades_row_is_recorded_as_one_row() -> None:
 
 def test_issue_22_is_the_provenance() -> None:
     assert "Issue 22" in (module.__doc__ or "")
+
+
+# ---------------------------------------------------------------- issue 21
+# Fifteen pass-through terminals, and the double invoice they produce.
+
+
+def test_all_fifteen_pass_through_terminals_are_recorded() -> None:
+    """Criterion one. Names from MSC tariff section 1.1, codes where this
+    repository already establishes them."""
+
+    assert len(PASS_THROUGH_TERMINALS) == 15
+    names = [name for name, _ in PASS_THROUGH_TERMINALS]
+    for required in (
+        "Garden City Savannah",
+        "North Charleston",
+        "Wando",
+        "Napoleon Avenue",
+        "LBCT",
+        "Trapac Oakland",
+        "Barbours Cut",
+        "Bayport",
+        "Wilmington NC",
+        "Husky Tacoma",
+        "Trapac LAX",
+    ):
+        assert required in names, required
+
+
+def test_codes_where_held_names_where_not() -> None:
+    """An invented UN/LOCODE is a guess wearing a standard. Unmapped names resolve
+    by name match, and the mapping table in issue 26 fills the codes when it
+    lands."""
+
+    coded = {name: code for name, code in PASS_THROUGH_TERMINALS if code is not None}
+    assert coded["Garden City Savannah"] == "USSVNG"
+    assert coded["Trapac LAX"] == "USLAXTP"
+    unmapped = [name for name, code in PASS_THROUGH_TERMINALS if code is None]
+    assert "Napoleon Avenue" in unmapped
+    assert len(unmapped) > 0, "every name coded would mean inventing codes"
+
+
+def test_matching_reads_codes_and_names() -> None:
+    """Invoices name terminals both ways, so the matcher reads both. Case
+    insensitive, for the same reason."""
+
+    assert is_pass_through("USSVNG") is True
+    assert is_pass_through("ussvng") is True
+    assert is_pass_through("Garden City Savannah") is True
+    assert is_pass_through("Port Everglades") is False
+    assert is_pass_through("USNYC") is False
+
+
+def test_a_pass_through_lane_resolves_to_nothing_with_the_mto_warning() -> None:
+    """Criterion two. The controlling instrument is the terminal operator's
+    schedule, not any MSC tariff, so there is no block and the warning fires."""
+
+    assert is_pass_through("USSVNG") is True
+    got = Registry(()).resolve(RateQuery(reference="MSC Savannah demurrage", on="2026-06-15"))
+    assert got.block is None
+    assert got.resolved is False
+    assert "hole in our tariff data" in got.withheld_reason
+
+
+def test_the_mto_warning_fires_on_a_pass_through_lane() -> None:
+    assert is_pass_through("Wando") is True
+    warning = warn(CODE_MSC_NO_TARIFF)
+    assert "terminal operator" in str(warning)
+
+
+def test_port_everglades_is_not_pass_through() -> None:
+    """Criterion four. MSC's one direct-tariff gateway: 4 working days free, 20
+    foot $65, 40 foot $110. Not pass-through, so it resolves to the direct
+    schedule rather than refusing."""
+
+    assert DIRECT_TARIFF_PORT == "Port Everglades"
+    assert is_pass_through("Port Everglades") is False
+
+
+def test_the_dedupe_check_exists_for_invoice_pairs() -> None:
+    """Criterion three. Terminal storage direct plus MSC line D&D prices the same
+    container twice, and neither invoice is arithmetically wrong."""
+
+    pair = InvoicePair(msc_line_invoice_ref="MSC-1", terminal_storage_invoice_ref="TERM-9")
+    assert pair.needs_dedupe is True
+    assert "double-count" in pair.dedupe_note()
+    assert "TERM-9" in pair.dedupe_note() and "MSC-1" in pair.dedupe_note()
+
+
+def test_a_lone_msc_invoice_needs_no_dedupe() -> None:
+
+    pair = InvoicePair(msc_line_invoice_ref="MSC-1")
+    assert pair.needs_dedupe is False
+    assert "Nothing to deduplicate" in pair.dedupe_note()
+
+
+def test_invoice_pairs_are_immutable() -> None:
+
+    pair = InvoicePair(msc_line_invoice_ref="MSC-1")
+
+    with pytest.raises(AttributeError):
+        pair.msc_line_invoice_ref = "x"  # type: ignore[misc]

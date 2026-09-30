@@ -140,12 +140,90 @@ def normalise(line_title: str, narrative: str) -> NormalisedCharge:
 #: not as the start of a table that does not exist.
 PORT_EVERGLADES_SOURCE = "MSC US import demurrage tariff, Port Everglades"
 
+#: The fifteen pass-through terminals, MSC tariff section 1.1: each terminal bills
+#: and collects its own demurrage except the terminals listed, for which MSC
+#: passes through at cost. Codes where the research or this repository already
+#: establishes them; names only where it does not, because an invented UN/LOCODE
+#: is a guess wearing a standard. Unmapped names resolve by name match, and the
+#: mapping table in issue 26 will fill the codes when it lands.
+PASS_THROUGH_TERMINALS: tuple[tuple[str, str | None], ...] = (
+    ("Garden City Savannah", "USSVNG"),
+    ("North Charleston", "USCHS"),
+    ("Wando", "USCHS"),
+    ("Napoleon Avenue", None),
+    ("LBCT", "USLGB"),
+    ("Trapac Oakland", "USOKL"),
+    ("VIT", None),
+    ("NIT", None),
+    ("Portsmouth", None),
+    ("Richmond", None),
+    ("Barbours Cut", None),
+    ("Bayport", None),
+    ("Wilmington NC", None),
+    ("Husky Tacoma", None),
+    ("Trapac LAX", "USLAXTP"),
+)
+
+#: MSC's one direct-tariff gateway. Port Everglades: 4 working days free, 20 foot
+#: , 40 foot . Not pass-through, so it resolves to the direct schedule
+#: rather than refusing with the MTO warning.
+DIRECT_TARIFF_PORT = "Port Everglades"
+
+
+def is_pass_through(port_or_terminal: str) -> bool:
+    """Whether an MSC lane runs through a pass-through terminal.
+
+    Matches by code or by name fragment, because invoices name terminals both
+    ways and a matcher that only reads codes misses half of them. Case
+    insensitive, for the same reason.
+    """
+    key = port_or_terminal.casefold()
+    return any(
+        (code is not None and code.casefold() == key)
+        or name.casefold() in key
+        or key in name.casefold()
+        for name, code in PASS_THROUGH_TERMINALS
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class InvoicePair:
+    """Two invoices that may price the same container twice.
+
+    On a pass-through lane the terminal operator bills storage directly and MSC
+    bills line D&D through, so the same box can appear on two invoices and
+    neither is arithmetically wrong. Disputing both without deduplicating prices
+    the container twice, which is how a valid dispute loses credibility.
+    """
+
+    msc_line_invoice_ref: str
+    terminal_storage_invoice_ref: str | None = None
+
+    @property
+    def needs_dedupe(self) -> bool:
+        """Whether both sides exist to be double-counted."""
+        return self.terminal_storage_invoice_ref is not None
+
+    def dedupe_note(self) -> str:
+        """What to check before disputing either side."""
+        if not self.needs_dedupe:
+            return "No terminal storage invoice on record. Nothing to deduplicate."
+        return (
+            f"Terminal storage invoice {self.terminal_storage_invoice_ref} and MSC line "
+            f"invoice {self.msc_line_invoice_ref} may price the same container. "
+            f"Deduplicate before disputing, or double-count and lose credibility."
+        )
+
+
 __all__ = [
+    "DIRECT_TARIFF_PORT",
     "INSIDE_MARKERS",
     "OUTSIDE_MARKERS",
+    "PASS_THROUGH_TERMINALS",
     "PORT_EVERGLADES_SOURCE",
     "ChargeKind",
     "NormalisedCharge",
+    "is_pass_through",
     "locus_in",
     "normalise",
 ]
