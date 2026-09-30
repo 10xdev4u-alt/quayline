@@ -82,6 +82,12 @@ def test_the_finding_is_marked_arguable_not_certain() -> None:
     assert finding is not None
     assert "rguable" in finding.detail
     assert "arguably a 541.5 failure" in finding.detail
+    assert finding.arguable is True, "a renderer must read the flag, not parse the text"
+
+
+def test_a_settled_finding_is_not_marked_arguable() -> None:
+    """The flag defaults False, so only the findings that need it carry it."""
+    assert ProcessFinding(tier=ProcessTier.PROCESS, cite="x", summary="y").arguable is False
 
 
 def test_a_thirty_day_window_is_not_a_finding() -> None:

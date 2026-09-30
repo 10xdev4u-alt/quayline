@@ -101,6 +101,11 @@ class ProcessFinding:
     summary: str
     detail: str = ""
     entitlement: str = ENTITLEMENT_SOURCES
+    #: Whether the finding rests on an unadjudicated reading. A renderer must not
+    #: have to search the detail text for the word "arguable" to learn that, because
+    #: a reworded message would silently stop being detected. CodeRabbit's nitpick on
+    #: PR 144, taken on the merits per #92.
+    arguable: bool = False
 
     def __post_init__(self) -> None:
         if self.tier is not ProcessTier.PROCESS and self.tier is not ProcessTier.INFORMATIONAL:
@@ -165,6 +170,7 @@ def check_dispute_window(window: DisputeWindow) -> ProcessFinding | None:
             f"arguably a 541.5 failure. Substantive entitlement, if any, comes from "
             f"{ENTITLEMENT_SOURCES}, never from 541.8."
         ),
+        arguable=True,
     )
 
 
