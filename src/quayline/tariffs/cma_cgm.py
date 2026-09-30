@@ -109,14 +109,38 @@ def generic_status() -> str:
     return GENERIC_STATUS
 
 
+#: Rail ramps invert the usual pattern: demurrage free time in working days,
+#: detention free time in calendar days. Ten free working days demurrage, the most
+#: generous allowance found, against three to four at ocean terminals. Seven free
+#: calendar days detention. No rates transcribed for either, so structure without
+#: pricing, like the Hapag schedules in issue 13.
+RAIL_DEMURRAGE_FREE_DAYS = 10
+RAIL_DETENTION_FREE_DAYS = 7
+
+
+def rail_allowance() -> dict[str, object]:
+    """The rail inversion, as data. Ten working days demurrage, seven calendar
+    days detention, no rates."""
+    return {
+        "demurrage_free_days": RAIL_DEMURRAGE_FREE_DAYS,
+        "demurrage_unit": "working days",
+        "detention_free_days": RAIL_DETENTION_FREE_DAYS,
+        "detention_unit": "calendar days",
+        "verified_rates": False,
+    }
+
+
 __all__ = [
     "BALTIMORE_EFFECTIVE",
     "BALTIMORE_FREE_DAYS",
     "BALTIMORE_TIER_1",
     "BUNDLE_QUOTE",
     "GENERIC_STATUS",
+    "RAIL_DEMURRAGE_FREE_DAYS",
+    "RAIL_DETENTION_FREE_DAYS",
     "BundleLine",
     "baltimore_tier_1",
     "generic_status",
+    "rail_allowance",
     "validate_credit",
 ]

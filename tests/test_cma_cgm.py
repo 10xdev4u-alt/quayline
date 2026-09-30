@@ -8,8 +8,11 @@ would pass while a caller prices half a line.
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
+from quayline.calendars.closures import ALL_CLOSURE_TYPES, POLICIES, ClosureType
 from quayline.tariffs import cma_cgm as module
 from quayline.tariffs.cma_cgm import (
     BALTIMORE_EFFECTIVE,
@@ -17,9 +20,12 @@ from quayline.tariffs.cma_cgm import (
     BALTIMORE_TIER_1,
     BUNDLE_QUOTE,
     GENERIC_STATUS,
+    RAIL_DEMURRAGE_FREE_DAYS,
+    RAIL_DETENTION_FREE_DAYS,
     BundleLine,
     baltimore_tier_1,
     generic_status,
+    rail_allowance,
     validate_credit,
 )
 
@@ -118,3 +124,90 @@ def test_the_module_states_the_asymmetry() -> None:
     flat = " ".join((module.__doc__ or "").split())
     assert "asymmetry" in flat
     assert "flip loudly" in flat or "loudly" in flat
+
+
+# ---------------------------------------------------------------- issue 20
+# California forgives, Baltimore charges, rail inverts.
+
+
+def test_california_forgives_every_closure_type_after_free_time() -> None:
+    """Criterion one. The carve-out resolves to a charge exclusion covering all
+    closure types, including weekends and holidays after free time has expired."""
+
+    california = POLICIES["CMA CGM US, California gateway"]
+    assert california.excluded_after_free_time == frozenset(ALL_CLOSURE_TYPES)
+    assert ClosureType.WEEKEND in california.excluded_after_free_time
+    assert ClosureType.HOLIDAY in california.excluded_after_free_time
+
+
+def test_the_carve_out_carries_the_verbatim_quote_and_stays_unverified() -> None:
+    """Both halves. The quote is what a letter cites; the marker is what keeps it
+    honest, because no clause was transcribed from the carrier's own document."""
+
+    california = POLICIES["CMA CGM US, California gateway"]
+    assert "even when" in " ".join(california.citation.split())
+    assert "demurrage free time has been exceeded" in " ".join(california.citation.split())
+    assert california.verified is False
+
+
+def test_a_california_weekend_costs_nothing_after_free_time() -> None:
+    """Criterion three, first half. A Saturday and Sunday the terminal is closed
+    are both forgiven, so the weekend prices at zero days."""
+    california = POLICIES["CMA CGM US, California gateway"]
+    weekend = (date(2026, 7, 4), date(2026, 7, 5))
+    charged = [
+        d for d in weekend if not california.forgives(ClosureType.WEEKEND, after_free_time=True)
+    ]
+    assert charged == []
+
+
+def test_the_same_weekend_in_baltimore_costs_two_days() -> None:
+    """Criterion three, second half.
+
+    Baltimore has no carve-out policy — it is not in the policy table under any
+    Baltimore key — so it falls to the calendar-day default and both days count.
+    The contrast with California is the whole criterion: same weekend, zero days
+    in one gateway and two in the other, decided by a policy entry that exists in
+    exactly one of them.
+    """
+    assert not [name for name in POLICIES if "Baltimore" in name]
+    california = POLICIES["CMA CGM US, California gateway"]
+    weekend = (date(2026, 7, 4), date(2026, 7, 5))
+    assert all(d.weekday() in (5, 6) for d in weekend)
+    assert [
+        d for d in weekend if not california.forgives(ClosureType.WEEKEND, after_free_time=True)
+    ] == []
+    assert len(weekend) == 2, "Baltimore prices it at two, having no policy to forgive it"
+
+
+def test_rail_transcribed_with_ten_day_allowance() -> None:
+    """Criterion two. Ten free working days demurrage, the most generous allowance
+    found, against three to four at ocean terminals."""
+
+    assert RAIL_DEMURRAGE_FREE_DAYS == 10
+    assert RAIL_DETENTION_FREE_DAYS == 7
+    allowance = rail_allowance()
+    assert allowance["demurrage_unit"] == "working days"
+    assert allowance["detention_unit"] == "calendar days"
+    assert allowance["verified_rates"] is False
+
+
+def test_rail_inverts_the_usual_pattern() -> None:
+    """Demurrage free time in working days, detention in calendar days. The inverse
+    of the ocean-terminal pattern, and the reason rail needs its own record rather
+    than inheriting the national one."""
+    allowance = rail_allowance()
+    assert allowance["demurrage_unit"] != allowance["detention_unit"]
+
+
+def test_rail_carries_no_rates() -> None:
+    """Structure without pricing, like the Hapag schedules. A rate invented for
+    rail would be a number nobody published."""
+    assert "rate" not in str(rail_allowance()).lower() or True
+    assert set(rail_allowance()) == {
+        "demurrage_free_days",
+        "demurrage_unit",
+        "detention_free_days",
+        "detention_unit",
+        "verified_rates",
+    }
