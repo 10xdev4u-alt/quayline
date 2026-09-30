@@ -21,6 +21,20 @@ htmlcov/
 *.key
 !data/**/*.pub
 
+# Third party tool state. These are per machine, per tool, per install, and
+# carry no information about the project. A project id committed here means one
+# person's tool was initialised, and every other clone then carries an id that
+# means nothing to them and differs from theirs.
+.freebuff/
+.codex/
+.agents/
+.continue/
+.cursor/
+.cline/
+# Agent session scratch
+*.session.json
+scratch/
+
 # Editor
 .vscode/
 .idea/
