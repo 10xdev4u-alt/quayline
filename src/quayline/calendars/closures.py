@@ -221,8 +221,11 @@ CMA_CGM_US_CALIFORNIA = ClosurePolicy(
     source="UNVERIFIED, not transcribed. See issue 20",
     citation=(
         "UNVERIFIED: CMA CGM forgives every closure type at its California gateways. The "
-        "California carve out is in our research corpus from the tariff, but no clause "
-        "stating it has been transcribed from the carrier's own document."
+        "carve-out verbatim: 'California Terminals only - No demurrage will be assessed "
+        "during days for which a Terminal is closed, including weekends or holidays, even "
+        "when demurrage free time has been exceeded.' Recorded in the research corpus from "
+        "the tariff, but no clause transcribed from the carrier's own document, so the "
+        "policy stays UNVERIFIED."
     ),
     verified=False,
 )
