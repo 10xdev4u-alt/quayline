@@ -51,6 +51,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 
 from quayline.regulation.checklist import ChecklistField, by_cite
 from quayline.regulation.kill_switch import Omission
@@ -162,6 +163,97 @@ class VacatedRuleError(RuntimeError):
     """A check tried to rely on a vacated section."""
 
 
+class FreightTerm(StrEnum):
+    """How freight was paid on the bill of lading.
+
+    This is the document that sets liability, which is why 541.6(a)(4) is a real hook
+    after the vacatur of 541.4. The closed list of who may be invoiced is gone. The
+    obligation to articulate why *this* party is liable is not.
+    """
+
+    PREPAID = "prepaid"
+    COLLECT = "collect"
+    #: The bill of lading does not say, or we have not seen it.
+    UNSTATED = "not stated"
+
+
+# ESTIMATE, not law, and the distinction matters.
+#
+# Prepaid freight is paid by the shipper at origin, so the goods are the buyer's by
+# the time anything is owed; industry practice puts demurrage and detention on the
+# consignee. Collect freight is payable by the consignee at destination, so the
+# shipper remains the party that owes the transport, and practice puts the charges
+# on the shipper.
+#
+# This is how the trade reads the bill of lading, not a rule in Part 541. Part 541
+# does not say it, no carrier tariff says it, and it is not uniform. It is marked
+# ESTIMATE here, per AGENTS.md section five, and it is used only to say which
+# question to ask. It is never used to assert that a particular party was wrong.
+# Asserting that would be a legal conclusion with no clause under it, which is the
+# exact failure the vacatur issue was about.
+#: The two parties a freight term decides between. Named so the evidence list and the
+#: question are generated from one place rather than typed twice.
+FREIGHT_PREPAID_PARTY = "the consignee"
+FREIGHT_COLLECT_PARTY = "the shipper"
+
+FREIGHT_TERM_ESTIMATE = (
+    "ESTIMATE: industry practice, not a rule in 46 CFR Part 541. Prepaid freight "
+    "typically places demurrage and detention on the consignee; collect freight "
+    "typically places it on the shipper. No carrier tariff in our research states "
+    "this, and practice is not uniform."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class FreightTermReading:
+    """What a freight term ordinarily implies, and how sure we are.
+
+    ``ordinarily_liable`` is ``None`` when the term is unstated, which is the case
+    that produces the strongest question rather than the weakest answer.
+    """
+
+    term: FreightTerm
+    ordinarily_liable: str | None
+    rationale: str
+
+    @property
+    def determined(self) -> bool:
+        return self.ordinarily_liable is not None
+
+
+def freight_term_reading(term: FreightTerm) -> FreightTermReading:
+    """The ordinary consequence of a freight term. ESTIMATE, see the constant."""
+    match term:
+        case FreightTerm.PREPAID:
+            return FreightTermReading(
+                term=term,
+                ordinarily_liable="the consignee",
+                rationale=(
+                    "Freight was prepaid at origin, so the consignee is the party that "
+                    "bought the goods and freight was paid on its behalf"
+                ),
+            )
+        case FreightTerm.COLLECT:
+            return FreightTermReading(
+                term=term,
+                ordinarily_liable="the shipper",
+                rationale=(
+                    "Freight is collect at destination, so the shipper remains the party "
+                    "that owes the transport and has not paid it"
+                ),
+            )
+        case FreightTerm.UNSTATED:
+            return FreightTermReading(
+                term=term,
+                ordinarily_liable=None,
+                rationale=(
+                    "The bill of lading does not state a freight term, so nothing in the "
+                    "document determines who bears the charge and the carrier must say so "
+                    "on the invoice"
+                ),
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class LiabilityFinding:
     """Whether the invoice articulates why the billed party is liable.
@@ -181,11 +273,54 @@ class LiabilityFinding:
     detail: str
     omission: Omission | None
     field: ChecklistField
+    freight: FreightTermReading | None = None
+    #: Who the carrier invoiced. Optional because the check is also run before we
+    #: know who was billed, and a question naming nobody is worse than a generic one.
+    billed_party: str = ""
 
     @property
     def eliminates_obligation(self) -> bool:
         """Only the absent case does. A conclusory basis is not a 541.5 event."""
         return self.omission is not None
+
+    def evidence(self) -> tuple[str, ...]:
+        """What a respondent has to produce, named before anything is demanded.
+
+        The bill of lading first, because it is the instrument that sets liability
+        and it is in the shipper's own hands, not the carrier's. Both freight terms
+        after it, because a respondent who reads the bill of lading and finds
+        "prepaid" needs to be told what that ordinarily implies before they decide
+        the carrier was right, and a respondent who finds "collect" needs the same.
+        """
+        items = ["the bill of lading for the shipment, showing the freight term"]
+        if self.freight is not None:
+            items.append(
+                f"the prepaid term, which ordinarily places these charges on "
+                f"{FREIGHT_PREPAID_PARTY}"
+            )
+            items.append(
+                f"the collect term, which ordinarily places them on {FREIGHT_COLLECT_PARTY}"
+            )
+        return tuple(items)
+
+    def question_for_carrier(self) -> str:
+        """The one question the respondent has to answer, in their words.
+
+        Not an accusation. A 541.6(a)(4) question is answered by producing a document
+        or by explaining why none exists, and the letter should make that easy.
+        """
+        freight = self.freight
+        who = freight.ordinarily_liable if freight else None
+        if freight is None or who is None:
+            return (
+                "Which party does the carrier contend is liable for these charges, and "
+                "what in the bill of lading or the contract between the parties makes it so?"
+            )
+        named = self.billed_party or "this party"
+        return (
+            f"The bill of lading shows freight {freight.term.value}, which ordinarily "
+            f"places these charges on {who}. On what basis is {named} liable instead?"
+        )
 
     def describe(self) -> str:
         if self.omission is not None:
@@ -204,16 +339,29 @@ CONCLUSORY_PHRASES: tuple[str, ...] = (
     "liable for charge",
     "responsible for payment",
     "proper party of interest",
+    "party of interest",
+    "party in interest",
 )
 
 
-def check_liability_basis(basis: str | None, invoice_ref: str = "") -> LiabilityFinding:
+def check_liability_basis(
+    basis: str | None,
+    invoice_ref: str = "",
+    *,
+    freight_term: FreightTerm = FreightTerm.UNSTATED,
+    billed_party: str = "",
+) -> LiabilityFinding:
     """541.6(a)(4). Is the basis for liability stated, and is it particularised?
 
     ``basis`` is what the carrier wrote, verbatim, or None if the disclosure is
     missing entirely.
+
+    ``freight_term`` and ``billed_party`` do not change the verdict. They change what
+    the letter asks for, which is the difference between demanding a document and
+    asking a question the respondent can answer from one they already hold.
     """
     field = by_cite(LIABILITY_BASIS_CITE)
+    freight = freight_term_reading(freight_term)
 
     if basis is None or not basis.strip():
         return LiabilityFinding(
@@ -224,6 +372,8 @@ def check_liability_basis(basis: str | None, invoice_ref: str = "") -> Liability
             ),
             omission=Omission(field=field, invoice_ref=invoice_ref or "the invoice"),
             field=field,
+            freight=freight,
+            billed_party=billed_party,
         )
 
     lowered = basis.casefold()
@@ -237,6 +387,8 @@ def check_liability_basis(basis: str | None, invoice_ref: str = "") -> Liability
             ),
             omission=None,
             field=field,
+            freight=freight,
+            billed_party=billed_party,
         )
 
     return LiabilityFinding(
@@ -244,11 +396,16 @@ def check_liability_basis(basis: str | None, invoice_ref: str = "") -> Liability
         detail="The stated basis names a contractual or status basis rather than asserting liability.",
         omission=None,
         field=field,
+        freight=freight,
+        billed_party=billed_party,
     )
 
 
 __all__ = [
     "CASES_BY_DOCKET",
+    "FREIGHT_COLLECT_PARTY",
+    "FREIGHT_PREPAID_PARTY",
+    "FREIGHT_TERM_ESTIMATE",
     "LIABILITY_BASIS_CITE",
     "STATUTE_41104_F",
     "VACATED_SECTION",
@@ -257,9 +414,12 @@ __all__ = [
     "WORLD_SHIPPING_COUNCIL_5414",
     "WORLD_SHIPPING_COUNCIL_5421",
     "CaseCitation",
+    "FreightTerm",
+    "FreightTermReading",
     "LiabilityFinding",
     "VacatedRuleError",
     "case_for",
     "check_liability_basis",
+    "freight_term_reading",
     "refuses_vacated_basis",
 ]
