@@ -62,6 +62,16 @@ class ClosureType(StrEnum):
     SCHEDULED_CLOSURE = "scheduled_closure"
     UNSCHEDULED_SHUTOUT = "unscheduled_shutout"
     APPOINTMENT_UNAVAILABLE = "appointment_unavailable"
+    #: First shift open, second closed. ONE counts it as a full working day, and as
+    #: a full billable day if free time has expired. It is a closure type rather
+    #: than a working-day flag because the terminal did partially close, and a flag
+    #: would let a caller treat "partially open" as "open" without reading the rule.
+    #:
+    #: Adding this member means CMA CGM California forgives it too, because that
+    #: policy forgives every closure type. That follows from the stated policy
+    #: rather than from a decision about partial shifts, and the UNVERIFIED marker
+    #: on the policy covers whether the policy itself is right.
+    PARTIAL_SHIFT = "partial_shift"
     CUSTOM = "custom"
 
 

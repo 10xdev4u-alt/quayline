@@ -216,12 +216,69 @@ def basis_in_force(on: date) -> Lookup:
     raise LookupError(f"no ONE clock regime covers {on.isoformat()} and it is not in the known gap")
 
 
+#: ONE collects demurrage prior to release only at eModal facilities, so it issues
+#: post-pull demurrage invoices routinely. That is a 541.6(d) dispute-channel fact,
+#: and it is also an argument that no payment incentive existed at the gate: the box
+#: was already gone, so the charge could not have hurried anything.
+EMODAL_COLLECTION_POLICY = (
+    "ONE collects demurrage prior to release only at eModal facilities, and issues "
+    "post-pull demurrage invoices routinely."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class PostPullFinding:
+    """A charge period that begins after the documented gate-out date.
+
+    The box was already pulled. A demurrage charge for days after gate-out is a
+    charge for time the container was not on the terminal, and a charge that could
+    not have incentivized anything at the gate, because the gate event was over.
+
+    That second sentence is an Evergreen element-three argument in miniature: if
+    the charge postdates the pull, no payment incentive existed when it mattered.
+    """
+
+    charge_start: date
+    gate_out: date
+    cite: str = "541.6(d)"
+
+    @property
+    def days_after_gate_out(self) -> int:
+        return (self.charge_start - self.gate_out).days
+
+    def sentence(self) -> str:
+        return (
+            f"ONE began charging on {self.charge_start.isoformat()}, "
+            f"{self.days_after_gate_out} day(s) after the documented gate-out of "
+            f"{self.gate_out.isoformat()}. {EMODAL_COLLECTION_POLICY} A charge that "
+            f"postdates the pull could not have incentivized anything at the gate."
+        )
+
+
+def flag_post_pull(charge_start: date, gate_out: date | None) -> PostPullFinding | None:
+    """Flag a charge period beginning after gate-out, or None.
+
+    `None` gate-out means no documented pull date, and without one there is nothing
+    to compare against. Returning None rather than raising, because an undocumented
+    gate-out is the normal case rather than an error, and an error would stop an
+    audit that has other findings worth making.
+    """
+    if gate_out is None:
+        return None
+    if charge_start <= gate_out:
+        return None
+    return PostPullFinding(charge_start=charge_start, gate_out=gate_out)
+
+
 __all__ = [
+    "EMODAL_COLLECTION_POLICY",
     "REGIMES",
     "UNKNOWN_WINDOW",
     "ClockBasis",
     "ClockRegime",
     "Lookup",
+    "PostPullFinding",
     "UnknownWindow",
     "basis_in_force",
+    "flag_post_pull",
 ]
