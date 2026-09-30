@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 
+from quayline.engine.dedupe import DIAGNOSTIC_SUFFIX
 from quayline.engine.result import AuditResult
 
 
@@ -62,7 +63,14 @@ INFORMATIONAL_CODES = frozenset({"tariff_unresolved", "validation_note", "eviden
 
 
 def basis_of(code: str) -> ClaimBasis:
-    """The money shape of a finding, from its code."""
+    """The money shape of a finding, from its code.
+
+    Demoted codes read informational. Issue 36: when the tariff resolves, the
+    day-count finding is diagnostic, and a diagnostic that still carried money
+    would price the same dollars twice.
+    """
+    if code.endswith(DIAGNOSTIC_SUFFIX):
+        return ClaimBasis.INFORMATIONAL
     if code in LINE_WIDE_CODES:
         return ClaimBasis.LINE_WIDE
     if code in INFORMATIONAL_CODES:
@@ -179,7 +187,10 @@ def _money_for(code: str, result: AuditResult) -> Decimal | None:
     Deliberately conservative: the variance when we priced it, nothing otherwise. A
     finding without a computable amount contributes no number rather than a guess.
     """
-    if code in INFORMATIONAL_CODES:
+    # basis_of is the single place codes are classified, so a demoted diagnostic
+    # and an informational code take the same path here. Two classifications of the
+    # same code is how a demotion stops working the next time one of them changes.
+    if basis_of(code) is ClaimBasis.INFORMATIONAL:
         return None
     if code in LINE_WIDE_CODES:
         return result.demanded_total
