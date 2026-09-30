@@ -172,7 +172,7 @@ def evidence_needed() -> tuple[str, ...]:
     return EVIDENCE_NEEDED
 
 
-def test_certification(
+def check_certification(
     delays: tuple[CarrierCausedDelay, ...],
     *,
     evidence_consulted: tuple[str, ...] = EVIDENCE_NEEDED,
@@ -180,7 +180,11 @@ def test_certification(
     """Test an affirmed certification against documented delays.
 
     Takes the delays, not the invoice, because the certification is about the
-    carrier's conduct and the invoice is about the carrier's arithmetic. Conflating
+    carrier's conduct.
+
+    Named ``check_`` rather than ``test_``: a library function starting with
+    ``test_`` is collected as a test by pytest in every module that imports it.
+    Renamed after exactly that happened. and the invoice is about the carrier's arithmetic. Conflating
     them is how a dispute about money becomes an accusation about conduct without
     anybody deciding to make one.
 
@@ -209,7 +213,7 @@ __all__ = [
     "CarrierCausedDelay",
     "CertificationTest",
     "DelayKind",
+    "check_certification",
     "e2_field",
     "evidence_needed",
-    "test_certification",
 ]

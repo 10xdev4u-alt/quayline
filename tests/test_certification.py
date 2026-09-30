@@ -20,11 +20,9 @@ from quayline.regulation.certification import (
     EVIDENCE_NEEDED,
     CarrierCausedDelay,
     DelayKind,
+    check_certification,
     e2_field,
     evidence_needed,
-)
-from quayline.regulation.certification import (
-    test_certification as run_certification,
 )
 from quayline.regulation.checklist import by_cite
 from quayline.regulation.kill_switch import Obligation, Omission, effect_of
@@ -67,25 +65,25 @@ def test_an_affirmed_certification_with_no_delays_stands() -> None:
     """A certification we cannot falsify is a certification that stands, and knowing
     that before the letter goes out is the difference between a demand and an
     embarrassment."""
-    result = run_certification(())
+    result = check_certification(())
     assert result.invalidated is False
     assert result.voids_invoice is False
     assert "makes no claim about the carrier" in result.sentence()
 
 
 def test_the_result_carries_what_was_consulted() -> None:
-    result = run_certification(())
+    result = check_certification(())
     assert result.evidence_consulted == EVIDENCE_NEEDED
 
 
 def test_the_result_is_immutable() -> None:
-    result = run_certification((delay(),))
+    result = check_certification((delay(),))
     with pytest.raises(AttributeError):
         result.invalidated = False  # type: ignore[misc]
 
 
 def test_the_test_is_deterministic() -> None:
-    assert run_certification((delay(),)) == run_certification((delay(),))
+    assert check_certification((delay(),)) == check_certification((delay(),))
 
 
 # ---------------------------------------------------------------- criterion 3
@@ -138,21 +136,21 @@ def test_a_single_delay_invalidates_the_whole_invoice() -> None:
     which the true days survive. The respondent cannot concede the delay and keep
     the certification.
     """
-    result = run_certification((delay(),))
+    result = check_certification((delay(),))
     assert result.invalidated is True
     assert result.voids_invoice is True
 
 
 def test_the_sentence_says_the_whole_invoice() -> None:
-    sentence = run_certification((delay(),)).sentence()
+    sentence = check_certification((delay(),)).sentence()
     assert "fails for the whole invoice" in sentence
     assert "false in any part is false" in sentence
 
 
 def test_two_delays_do_not_invalidate_twice() -> None:
     """Invalidation is boolean. There is no double void and no stronger void."""
-    one = run_certification((delay(),))
-    two = run_certification((delay(), delay(JULY_5, DelayKind.LATE_VESSEL)))
+    one = check_certification((delay(),))
+    two = check_certification((delay(), delay(JULY_5, DelayKind.LATE_VESSEL)))
     assert one.invalidated is True
     assert two.invalidated is True
     assert one.voids_invoice == two.voids_invoice
@@ -161,7 +159,7 @@ def test_two_delays_do_not_invalidate_twice() -> None:
 def test_a_delay_on_one_day_voids_days_it_does_not_cover() -> None:
     """The point made concrete. A July 2 rollover voids a charge billed July 8
     through 11, because the statement it falsifies was about the whole invoice."""
-    result = run_certification((delay(JULY_2),))
+    result = check_certification((delay(JULY_2),))
     assert result.voids_invoice is True
     assert "whole invoice" in result.sentence()
 
@@ -170,11 +168,11 @@ def test_each_delay_kind_invalidates_on_its_own() -> None:
     """No kind is weaker than the others. A rollover and a late delivery order are
     different facts that falsify the same sentence."""
     for kind in DelayKind:
-        assert run_certification((delay(kind=kind),)).invalidated is True, kind
+        assert check_certification((delay(kind=kind),)).invalidated is True, kind
 
 
 def test_the_sentence_names_the_kind() -> None:
-    sentence = run_certification((delay(JULY_5, DelayKind.LATE_DELIVERY_ORDER),)).sentence()
+    sentence = check_certification((delay(JULY_5, DelayKind.LATE_DELIVERY_ORDER),)).sentence()
     assert "delivery order issued late" in sentence
 
 
@@ -188,7 +186,7 @@ def test_the_certification_is_not_a_kill_switch_finding() -> None:
     # disjoint bases, and that rejection is the proof rather than a nuisance. What
     # carries the meaning is that a CertificationTest has no field naming a missing
     # disclosure, because it is not an omission, and an Omission has one.
-    result = run_certification((delay(),))
+    result = check_certification((delay(),))
     assert not hasattr(result, "field")
     assert "field" in Omission.__dataclass_fields__
 
