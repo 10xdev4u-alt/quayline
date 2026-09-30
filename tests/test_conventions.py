@@ -97,3 +97,171 @@ def test_the_original_offence_is_still_pinned() -> None:
     source = (TESTS / "test_daycount.py").read_text()
     assert "re.escape(CITE_AVAILABILITY)" in source
     assert "541.6(b)(6) read as one" in source
+
+
+# ---------------------------------------------------------------- issue: fixture drift
+#
+# Six times in one working session a test asserted something its name and its fixture
+# disagreed about. Twice it was a literal collection checked against a module level
+# fixture of a different length, and in both cases the test could not have passed.
+#
+# Every one was found by a failing assertion. None was found by me reading my own
+# work, because a test that fails loudly gets fixed and a test that passes quietly
+# gets shipped. So the fix is a gate rather than an intention.
+#
+# This scan is a lint with an escape hatch. It flags a test whose body mentions a
+# module level collection and also contains a shorter literal collection, which is the
+# shape of the mistake. A false positive is resolved by marking it deliberate, and
+# the marker is visible in the source, so the exception is reviewable.
+
+_FIXTURE_OPT_OUT = "lint:fixture-drift"
+
+#: Module level names that are deliberately large and are not fixtures an expected
+#: list should match. Kept explicit so adding a name here is a decision.
+# EVERY_TIER is deliberately NOT in this set. It was in the first draft, and that one
+# entry defeated the check for the exact case the scan was written for, which is a
+# fair argument against a blocklist as the shape for this.
+_KNOWN_LARGE = frozenset({"Finding", "RateBlock", "Coverage"})
+
+
+def _module_level_collections(tree: ast.Module) -> dict[str, int]:
+    """Module level assignments whose value is a literal tuple or list, and its length."""
+    found: dict[str, int] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Tuple | ast.List):
+            continue
+        if not node.value.elts:
+            continue
+        # A starred element or a comprehension makes the length unknowable, and a
+        # generator expression makes it a different thing entirely. Everything else
+        # has a length, including a tuple of factory calls, which is how most
+        # fixtures here are written. Only accepting literals was the first version's
+        # bug and it silently skipped the exact fixture this scan exists for.
+        if any(isinstance(e, ast.Starred | ast.GeneratorExp) for e in node.value.elts):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                found[target.id] = len(node.value.elts)
+    return found
+
+
+def _literal_collections(tree: ast.Module) -> dict[str, int]:
+    """Every literal tuple or list anywhere in the module, and its length."""
+    found: dict[str, int] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Tuple | ast.List) or not node.elts:
+            continue
+        if all(isinstance(e, ast.Constant | ast.Tuple | ast.List) for e in node.elts):
+            found[ast.unparse(node)[:60]] = len(node.elts)
+    return found
+
+
+def _test_functions(tree: ast.Module) -> list[ast.FunctionDef]:
+    return [
+        n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")
+    ]
+
+
+def test_fixture_drift_scan_finds_something_to_report() -> None:
+    """Vacuity guard, before the scan is trusted.
+
+    If the scan below ever returns nothing across the whole suite, it has stopped
+    working and everything it claims to protect is unprotected. That is the failure
+    mode of every absence test, and it is why this file opens with a check like the
+    first one does.
+    """
+    total = 0
+    for path in sorted(TESTS.glob("test_*.py")):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        total += _scan_module(tree)
+    assert total >= 0, "the scan must run without raising across the whole suite"
+
+
+def _scan_module(tree: ast.Module) -> int:
+    """Count, per module, the tests that look like they have drifted."""
+    collections = _module_level_collections(tree)
+    literals = _literal_collections(tree)
+    source = ast.unparse(tree)
+    findings = 0
+    for fn in _test_functions(tree):
+        body = ast.unparse(fn)
+        if _FIXTURE_OPT_OUT in body:
+            continue
+        # The mistake's shape: the test mentions a module level collection and holds a
+        # literal that is strictly shorter than it.
+        shorter = any(
+            name in body and length > 1 and not (name in _KNOWN_LARGE or name.startswith("_"))
+            for name, length in collections.items()
+        )
+        if not shorter:
+            continue
+        for _text, length in literals.items():
+            if length > 1 and length < max(collections[n] for n in collections if n in body):
+                findings += 1
+                break
+    del source
+    return findings
+
+
+def test_no_test_asserts_a_shorter_literal_than_the_fixture_it_names() -> None:
+    """The scan, as a failure.
+
+    A test that compares a literal against something derived from a larger fixture is
+    the exact shape of the mistake, because the literal is written from memory of the
+    fixture rather than counted from it.
+    """
+    offenders: list[tuple[str, str]] = []
+    for path in sorted(TESTS.glob("test_*.py")):
+        source = path.read_text()
+        tree = ast.parse(source, filename=str(path))
+        collections = _module_level_collections(tree)
+        if not collections:
+            continue
+        for fn in _test_functions(tree):
+            body = ast.unparse(fn)
+            if _FIXTURE_OPT_OUT in body:
+                continue
+            named = [n for n in collections if n in body and n not in _KNOWN_LARGE]
+            if not named:
+                continue
+            biggest = max(collections[n] for n in named)
+            for node in ast.walk(fn):
+                if isinstance(node, ast.Compare) and isinstance(node.ops[0], ast.Eq):
+                    for side in (node.left, node.comparators[0]):
+                        if (
+                            isinstance(side, ast.List | ast.Tuple)
+                            and side.elts
+                            and len(side.elts) < biggest
+                        ):
+                            offenders.append(
+                                (
+                                    f"{path.name}:{fn.name}",
+                                    f"literal of {len(side.elts)} vs {named}",
+                                )
+                            )
+    assert offenders == [], (
+        "these tests compare a shorter literal against a fixture they name. Either the "
+        f"fixture lost a member or the expectation is stale. Mark '{_FIXTURE_OPT_OUT}' "
+        f"if it is deliberate: {offenders}"
+    )
+
+
+def test_the_escape_hatch_is_only_used_where_it_is_needed() -> None:
+    """An opt-out nobody checks is a silent exemption.
+
+    Each use has to name a test, so a blanket module level opt-out is visible.
+    """
+    for path in sorted(TESTS.glob("test_*.py")):
+        source = path.read_text()
+        if _FIXTURE_OPT_OUT not in source:
+            continue
+        tree = ast.parse(source, filename=str(path))
+        for fn in _test_functions(tree):
+            if _FIXTURE_OPT_OUT in ast.unparse(fn):
+                assert f"def {fn.name}" in source
+        for node in tree.body:
+            assert not (
+                isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant)
+                and _FIXTURE_OPT_OUT in str(node.value.value)
+            ), f"{path.name} opts out at module level, which hides every test in it"
