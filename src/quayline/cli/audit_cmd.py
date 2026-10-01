@@ -49,6 +49,8 @@ from quayline.engine.audit import audit
 from quayline.engine.ordering import order_findings, strategy_for
 from quayline.engine.recovery import estimate_for
 from quayline.engine.result import AuditResult
+from quayline.evidence.packet import render
+from quayline.filing.dispute import dispute_for
 from quayline.ingest.bind import BindError, bind_ledger
 from quayline.ingest.pdftext import extract_text_layer
 from quayline.regulation.deadline import InvoiceIssued, dispute_request_deadline
@@ -89,6 +91,14 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--terminal", default="", help="terminal or gateway, where it matters")
     run.add_argument("--invoice-ref", default="", help="override the invoice reference")
     run.add_argument("--json", action="store_true", help="emit the full result as JSON")
+    run.add_argument(
+        "--packet",
+        action="store_true",
+        help=(
+            "print the rendered dispute packet, the letter a carrier reads. "
+            "Mutually exclusive with --json."
+        ),
+    )
     add_coverage_parser(sub)
     return parser
 
@@ -214,6 +224,14 @@ def main(argv: list[str] | None = None, stream: TextIO | None = None) -> int:
 
     args = parser.parse_args(argv)
 
+    if getattr(args, "packet", False) and getattr(args, "json", False):
+        out.write(
+            "--packet and --json cannot be combined. The packet is the letter a "
+            "carrier reads and the JSON is the machine result, and silently "
+            "choosing one would hand a pipeline prose.\n"
+        )
+        return EXIT_ENGINE_ERROR
+
     if args.command == "coverage":
         return run_coverage(args, out)
 
@@ -232,6 +250,11 @@ def main(argv: list[str] | None = None, stream: TextIO | None = None) -> int:
     if args.json:
         json.dump(_as_json(result), out, indent=2)
         out.write("\n")
+    elif args.packet:
+        packet = dispute_for(result)
+        out.write(render(packet))
+        verdict = "can be filed" if packet.can_file else "cannot be filed"
+        out.write(f"\nThis packet {verdict} as it stands.\n")
     else:
         out.write(_human(result, run.invoice_date) + "\n")
 
