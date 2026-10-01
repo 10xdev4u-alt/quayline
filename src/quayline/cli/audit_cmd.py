@@ -57,6 +57,8 @@ from quayline.filing.evidence import EvidenceRefusedError, items_for
 from quayline.ingest.bind import BindError, bind_ledger
 from quayline.ingest.pdftext import extract_text_layer
 from quayline.regulation.deadline import InvoiceIssued, dispute_request_deadline
+from quayline.tariffs.corpus import FixtureError, load_corpus
+from quayline.tariffs.resolution import RateQuery, Resolution, resolve
 
 #: Nothing worth filing.
 EXIT_CLEAN = 0
@@ -227,12 +229,41 @@ def _audit_one(args: argparse.Namespace) -> _Run:
         raise EngineError(f"no such file: {args.path}")
 
     data = args.path.read_bytes()
-    result = audit(data, args.carrier, args.terminal, invoice_ref=args.invoice_ref)
     bound = bind_ledger(extract_text_layer(data))
+    result = audit(
+        data,
+        args.carrier,
+        args.terminal,
+        resolve_disclosed(bound.rate_rule, args.terminal),
+        invoice_ref=args.invoice_ref,
+    )
     return _Run(
         result=result,
         invoice_date=bound.invoice_date,
         evidence=capture_request(args),
+    )
+
+
+def resolve_disclosed(rate_rule: str, terminal: str) -> Resolution | None:
+    """Resolve the rule the carrier disclosed against the transcribed corpus.
+
+    The rule comes off the document under 541.6(c)(2), so nothing is typed by an
+    operator. A rule we do not hold resolves to a ``Resolution`` with no block and a
+    reason, which ``audit`` turns into a ``tariff_unresolved`` finding rather than a
+    guessed rate.
+
+    ``None`` when the corpus cannot be loaded at all, so a missing or corrupt corpus
+    is a warning rather than an audit that refuses to run.
+    """
+    if not rate_rule:
+        return None
+    try:
+        blocks = tuple(load_corpus().values())
+    except (FixtureError, OSError):
+        return None
+    return resolve(
+        RateQuery(reference=rate_rule, on="container", terminal=terminal or None),
+        blocks,
     )
 
 

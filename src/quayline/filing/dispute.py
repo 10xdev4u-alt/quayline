@@ -67,6 +67,21 @@ _TITLES: dict[str, str] = {
 _MONEY_CODES = frozenset({CODE_AMOUNT_VARIANCE, CODE_DAYCOUNT_VARIANCE})
 
 
+def _title_for(finding: Finding) -> str:
+    """A claim title, or the finding's own summary when there is no mapped one.
+
+    The fallback is a sentence fragment ending in a colon, because that is what a
+    ``Discrepancy.as_letter_lines`` summary is. A heading that ends in a colon reads
+    as a truncated document, so anything without a mapped title is trimmed of its
+    trailing punctuation and capitalised.
+    """
+    mapped = _TITLES.get(finding.code)
+    if mapped is not None:
+        return mapped
+    text = (finding.summary or finding.code).strip().rstrip(":").strip()
+    return text[:1].upper() + text[1:] if text else finding.code
+
+
 def _is_automatic(finding: Finding) -> bool:
     """Whether the remedy applies without a showing from us.
 
@@ -123,7 +138,7 @@ def claims_for(result: AuditResult) -> tuple[tuple[Claim, ...], tuple[EvidenceIt
                 days=tuple(sorted(set(existing.days) | set(finding.days))),
                 amount_at_stake=existing.amount_at_stake or amount,
                 basis=existing.basis or finding.cite,
-                automatic=existing.automatic and automatic,
+                automatic=existing.automatic or automatic,
             )
             continue
 
@@ -131,7 +146,7 @@ def claims_for(result: AuditResult) -> tuple[tuple[Claim, ...], tuple[EvidenceIt
         claims.append(
             Claim(
                 ground=ground,
-                title=_TITLES.get(finding.code, finding.summary or finding.code),
+                title=_title_for(finding),
                 days=tuple(sorted(finding.days)),
                 amount_at_stake=amount,
                 basis=finding.cite,

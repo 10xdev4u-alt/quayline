@@ -58,33 +58,46 @@ def test_the_real_fixture_binds_to_the_dates_it_states() -> None:
     assert ledger.allowed_free_time_days == 7
 
 
-def test_asking_for_money_that_was_never_stated_is_refused() -> None:
-    """The gate. ``to_ledger`` is the only route to a Ledger and it checks."""
-    text = extract_text_layer(INVOICE_PDF.read_bytes())
-    bound = bind_ledger(text)
+def test_a_missing_total_is_now_an_omission_rather_than_a_third_state() -> None:
+    """Issue 185 narrowed this. 541.6(c)(1) requires the total on the invoice.
 
-    with pytest.raises(BindError) as caught:
-        bound.to_ledger()
+    Until then a document could bind with ``stated_total`` of ``None`` and callers
+    branched on ``has_money``. Binding the rate rule under 541.6(c)(2) makes a
+    document that states a rule but no total unreadable, so the absent branch became
+    unreachable and was removed rather than left as dead code.
 
-    assert "no Ledger to build" in str(caught.value)
-
-
-def test_the_narrative_fixture_states_no_money_and_says_so() -> None:
-    """It states free time and dates, and no rate and no total.
-
-    So the binder returns a ``TimingLedger`` with ``stated_total`` of ``None``.
-    A zero here would be our arithmetic spoken in the carrier's mouth, and zero is
-    a claim about their arithmetic while ``None`` is a claim about our reading.
+    A test that keeps exercising an unreachable branch is coverage of nothing.
     """
-    text = extract_text_layer(INVOICE_PDF.read_bytes())
-    bound = bind_ledger(text)
+    text = layer(
+        "Allowed Free Time: 7 days",
+        "Start Date of Free Time: 2026-06-30",
+        "End Date of Free Time: 2026-07-07",
+        "Charged Dates: 2026-07-08, 2026-07-09",
+        "Rate Rule: Maersk US Newark Dry",
+        "Rate: 100.00",
+        "Amount: 200.00",
+    )
 
-    assert bound.has_money is False
-    assert bound.stated_total is None
+    with pytest.raises(OmittedError) as caught:
+        bind_ledger(text)
+
+    assert caught.value.cite == "541.6(c)(1)"
+    assert caught.value.field == "total"
+
+
+def test_the_fixture_binds_the_carriers_own_rate_rule() -> None:
+    """541.6(c)(2), read off the document rather than typed by an operator.
+
+    The fixture states ``Maersk US Newark Dry``, which is a real rule in the
+    transcribed corpus, so a caller that has the corpus can price this invoice. The
+    name is carried verbatim because the letter quotes the carrier's own words.
+    """
+    bound = bind_ledger(extract_text_layer(INVOICE_PDF.read_bytes()))
+
+    assert bound.rate_rule == "Maersk US Newark Dry"
+    assert bound.stated_total == Decimal("1170.00")
     assert bound.lines[0].container_number == "MAEU1234567"
-    assert bound.lines[0].bol_number == "MAEU123456789"
     assert bound.lines[0].chargeable_days == 3
-    assert "no total" in bound.why_no_money()
 
 
 def test_a_document_stating_money_binds_to_a_money_ledger() -> None:
@@ -95,6 +108,7 @@ def test_a_document_stating_money_binds_to_a_money_ledger() -> None:
         "End Date of Free Time: 2026-07-07",
         "Container Number: MAEU1234567",
         "Bill of Lading Number: MAEU123456789",
+        "Rate Rule: Maersk US Newark Dry",
         "Charged Dates: 2026-07-08, 2026-07-09, 2026-07-10",
         "Days: 3",
         "Rate: 100.00",
@@ -106,6 +120,7 @@ def test_a_document_stating_money_binds_to_a_money_ledger() -> None:
     assert bound.has_money is True
     assert bound.stated_total == Decimal("300.00")
     assert bound.to_ledger().stated_total == Decimal("300.00")
+    assert bound.rate_rule == "Maersk US Newark Dry"
 
 
 def test_the_charge_table_fixture_is_a_carrier_omission_not_our_failure() -> None:
@@ -138,17 +153,27 @@ def test_a_missing_allowance_is_an_omission_carrying_its_cite() -> None:
     assert caught.value.cite == "541.6(b)(3)"
 
 
-def test_a_missing_total_is_not_a_failure_at_all() -> None:
-    """The narrative fixture proves it. Timing alone is a bindable document."""
+def test_a_missing_rate_rule_is_an_omission_not_an_unboundable_document() -> None:
+    """The three states narrowed when issue 185 bound the rate rule.
+
+    This test used to assert that a document stating timing but no money binds. It
+    no longer does, because 541.6(c)(2) requires the carrier to name the rule it
+    billed under and ``engine/amount.py`` cannot proceed without it. A document with
+    no rule is an omission against the carrier, which is the strongest finding the
+    engine produces, so refusing to bind it is the correct outcome rather than a
+    regression.
+    """
     text = layer(
         "Allowed Free Time: 7 days",
         "Start Date of Free Time: 2026-06-30",
         "End Date of Free Time: 2026-07-07",
         "Charged Dates: 2026-07-08, 2026-07-09",
     )
-    bound = bind_ledger(text)
 
-    assert bound.has_money is False
+    with pytest.raises(OmittedError) as caught:
+        bind_ledger(text)
+
+    assert caught.value.cite == "541.6(c)(2)"
 
 
 def test_an_unparseable_date_carries_the_offending_line() -> None:
@@ -212,6 +237,10 @@ def test_a_repeated_charged_date_is_refused_rather_than_double_counted() -> None
         "Start Date of Free Time: 2026-06-30",
         "End Date of Free Time: 2026-07-07",
         "Charged Dates: 2026-07-08, 2026-07-08",
+        "Rate Rule: Maersk US Newark Dry",
+        "Rate: 100.00",
+        "Amount: 200.00",
+        "TOTAL: 200.00",
     )
     with pytest.raises(BindError) as caught:
         bind_ledger(text)
@@ -226,8 +255,108 @@ def test_one_unreadable_charged_date_fails_the_whole_bind() -> None:
         "Start Date of Free Time: 2026-06-30",
         "End Date of Free Time: 2026-07-07",
         "Charged Dates: 2026-07-08, sometime, 2026-07-10",
+        "Rate Rule: Maersk US Newark Dry",
+        "Rate: 100.00",
+        "Amount: 300.00",
+        "TOTAL: 300.00",
     )
     with pytest.raises(BindError) as caught:
         bind_ledger(text)
 
     assert "sometime" in str(caught.value)
+
+
+# ------------------------------------------- 541.6(c)(2), the disclosed rate rule
+
+
+def test_the_disclosed_rate_rule_is_captured() -> None:
+    """541.6(c)(2). The carrier must name the rule it billed under.
+
+    It is on the invoice, so it is a bindable field rather than an operator input.
+    Nothing downstream can price a charge without it, and issue 185 exists because
+    the binder was throwing it away.
+    """
+    text = layer(
+        "Allowed Free Time: 7 days",
+        "Start Date of Free Time: 2026-06-30",
+        "End Date of Free Time: 2026-07-07",
+        "Container Number: MAEU1234567",
+        "Bill of Lading Number: MAEU123456789",
+        "Charged Dates: 2026-07-09, 2026-07-10",
+        "Rate Rule: Maersk US Newark Dry",
+        "Rate: 100.00",
+        "Amount: 200.00",
+        "TOTAL: 200.00",
+    )
+    bound = bind_ledger(text)
+
+    assert bound.rate_rule == "Maersk US Newark Dry"
+
+
+def test_a_missing_rate_rule_is_an_omission_carrying_5416c2() -> None:
+    """The carrier's disclosure is absent, which is a finding and not our gap.
+
+    ``AGENTS.md`` section five and the three-state rule in ``result.py`` both point
+    the same way: absent is not the same as zero, and absent is not our problem.
+    """
+    text = layer(
+        "Allowed Free Time: 7 days",
+        "Start Date of Free Time: 2026-06-30",
+        "End Date of Free Time: 2026-07-07",
+        "Container Number: MAEU1234567",
+        "Bill of Lading Number: MAEU123456789",
+        "Charged Dates: 2026-07-09, 2026-07-10",
+    )
+
+    with pytest.raises(OmittedError) as caught:
+        bind_ledger(text)
+
+    assert caught.value.cite == "541.6(c)(2)"
+    assert caught.value.field == "rate rule"
+
+
+def test_a_document_with_a_rate_rule_always_states_a_total() -> None:
+    """A named rule with no money is the extraction error this module exists for.
+
+    The rule tells us what the carrier says it billed under, so a total is what
+    checking that rule means. Without one there is nothing to compare and the
+    document is not auditable for money.
+    """
+    text = layer(
+        "Allowed Free Time: 7 days",
+        "Start Date of Free Time: 2026-06-30",
+        "End Date of Free Time: 2026-07-07",
+        "Container Number: MAEU1234567",
+        "Bill of Lading Number: MAEU123456789",
+        "Charged Dates: 2026-07-09, 2026-07-10",
+        "Rate Rule: Maersk US Newark Dry",
+    )
+
+    with pytest.raises(OmittedError) as caught:
+        bind_ledger(text)
+
+    assert "total" in caught.value.field
+
+
+def test_the_rate_rule_is_carried_verbatim_not_normalised() -> None:
+    """We quote the carrier's own words back at them.
+
+    Normalising here would mean the letter cites a rule name the carrier never wrote,
+    and a carrier who cannot find that rule in their own tariff has no way to answer.
+    """
+    text = layer(
+        "Allowed Free Time: 7 days",
+        "Start Date of Free Time: 2026-06-30",
+        "End Date of Free Time: 2026-07-07",
+        "Container Number: MAEU1234567",
+        "Bill of Lading Number: MAEU123456789",
+        "Charged Dates: 2026-07-09",
+        "Rate Rule:  Maersk  US Newark Dry  ",
+        "Rate: 100.00",
+        "Amount: 100.00",
+        "TOTAL: 100.00",
+    )
+
+    # Outer whitespace is stripped by the label scan, inner spacing is preserved,
+    # because the carrier's rule name is the thing we are obliged to quote.
+    assert bind_ledger(text).rate_rule == "Maersk  US Newark Dry"
