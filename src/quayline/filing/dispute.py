@@ -51,7 +51,7 @@ from quayline.engine.result import (
     AuditResult,
     Finding,
 )
-from quayline.evidence.checklist import Artifact, Ground
+from quayline.evidence.checklist import Ground
 from quayline.evidence.packet import Claim, EvidenceItem, Packet, assemble
 
 #: The code to the claim title it produces. A code is a stable identifier and a
@@ -92,20 +92,6 @@ def _amount_for(finding: Finding, result: AuditResult) -> Decimal | None:
     return result.variance
 
 
-def _artifact_for(finding: Finding) -> Artifact:
-    """The thing a carrier is asked for, named the way the carrier names it.
-
-    Not filenames. A carrier does not ask for a ``charges.csv``, it asks for "the
-    specific charges disputed", and the difference is that one is a thing we produce
-    and the other is a phrase that appears in their own rules.
-    """
-    if finding.code == CODE_AMOUNT_VARIANCE:
-        return Artifact.SPECIFIC_CHARGES
-    if finding.code == CODE_AVAILABILITY_CONTRADICTION:
-        return Artifact.APPOINTMENT_SCREENSHOT
-    return Artifact.EXPLANATION
-
-
 def claims_for(result: AuditResult) -> tuple[tuple[Claim, ...], tuple[EvidenceItem, ...]]:
     """The claims and evidence an audit result supports.
 
@@ -114,8 +100,13 @@ def claims_for(result: AuditResult) -> tuple[tuple[Claim, ...], tuple[EvidenceIt
     ``assemble`` rather than only against the finished packet.
     """
     claims: list[Claim] = []
-    evidence: list[EvidenceItem] = []
     position: dict[Ground, int] = {}
+    #: Deliberately always empty. A contested claim gets no evidence item from the
+    #: finding that produced it, because a fabricated EvidenceItem would satisfy the
+    #: packet gate without attesting to anything. The gate is only real while a
+    #: contested claim arrives with no evidence and blocks. Evidence comes from
+    #: ``filing.evidence.attach_capture`` and from nowhere else.
+    evidence: tuple[EvidenceItem, ...] = ()
 
     for finding in result.findings:
         grounds = finding.grounds or (Ground.DISCLOSURE_OMITTED,)
@@ -134,15 +125,6 @@ def claims_for(result: AuditResult) -> tuple[tuple[Claim, ...], tuple[EvidenceIt
                 basis=existing.basis or finding.cite,
                 automatic=existing.automatic and automatic,
             )
-            if not automatic:
-                evidence.append(
-                    EvidenceItem(
-                        ground=ground,
-                        kind=_artifact_for(finding),
-                        description=finding.summary or finding.code,
-                        source=finding.cite,
-                    )
-                )
             continue
 
         position[ground] = len(claims)
@@ -156,17 +138,8 @@ def claims_for(result: AuditResult) -> tuple[tuple[Claim, ...], tuple[EvidenceIt
                 automatic=automatic,
             )
         )
-        if not automatic:
-            evidence.append(
-                EvidenceItem(
-                    ground=ground,
-                    kind=_artifact_for(finding),
-                    description=finding.summary or finding.code,
-                    source=finding.cite,
-                )
-            )
 
-    return tuple(claims), tuple(evidence)
+    return tuple(claims), evidence
 
 
 def dispute_for(result: AuditResult) -> Packet:
