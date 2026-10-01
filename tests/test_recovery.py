@@ -8,6 +8,7 @@ former is where the request for restraint actually bites.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -24,6 +25,7 @@ from quayline.engine.recovery import (
     estimate_for,
 )
 from quayline.engine.result import CODE_FIELD_OMITTED, AuditResult, Finding
+from quayline.ingest.credit import CreditNote, reconcile
 
 D = Decimal
 
@@ -265,10 +267,18 @@ def test_estimate_is_deterministic() -> None:
     assert estimate(findings, D("5100")) == estimate(findings, D("5100"))
 
 
-def test_negative_demands_are_refused_by_the_type() -> None:
-    """A negative invoice is a credit note, which issue 45 tracks as its own
-    document type. Pricing one here would confuse a refund with a recovery."""
-    assert True, "documented in the type, enforced nowhere today"
+def test_a_negative_demand_is_a_credit_note_not_an_estimate() -> None:
+    """Replaces the placeholder that awaited issue 45.
+
+    A negative invoice is a credit note, which is its own document type with its
+    own reference to the original charge. Pricing one here would confuse a refund
+    with a recovery, so the recovery engine refuses the shape and the credit
+    module handles the document.
+    """
+    credit = CreditNote(original_ref="INV-1", amount=D("500"), credited_on=date(2026, 8, 1))
+    balance = reconcile("INV-1", D("4800"), (credit,))
+    assert balance.outstanding == D("4300")
+    assert balance.settled is False
 
 
 def test_issue_35_is_the_provenance() -> None:
