@@ -129,6 +129,13 @@ class BoundLedger:
     free_time_end: date
     allowed_free_time_days: int
     stated_total: Decimal | None = None
+    #: The days the carrier says it charged for, as stated. 541.6(b)(8).
+    charged_dates: tuple[date, ...] = ()
+    #: When the invoice says it was issued. 541.6(a)(3).
+    invoice_date: date | None = None
+    #: When the carrier says the container was available. 541.6(b)(6), and absent
+    #: on an export invoice, which is a real absence and not a reading failure.
+    availability_date: date | None = None
 
     @property
     def has_money(self) -> bool:
@@ -275,6 +282,25 @@ def _decimal(fields: _Fields, field: str, cite: str, *labels: str) -> Decimal:
         ) from exc
 
 
+def _optional_date(fields: _Fields, field: str, *labels: str) -> date | None:
+    """A date the document may legitimately not state.
+
+    Distinct from ``require``. An export invoice has no container availability date
+    under 541.6(b)(6) and that is not a defect, so the absence is recorded as
+    ``None`` rather than raised. A date that is present and unreadable still fails.
+    """
+    raw = fields.get(*labels)
+    if raw is None:
+        return None
+    parsed = _parse_date(raw)
+    if parsed is None:
+        raise BindError(
+            f"the {field} is present but not a date we can read. The line says "
+            f"{fields.quoted(labels[0], raw)!r}."
+        )
+    return parsed
+
+
 def _charged_dates(fields: _Fields) -> tuple[date, ...]:
     """Parse 541.6(b)(8)'s dates, which arrive as one comma separated line.
 
@@ -382,6 +408,16 @@ def bind_ledger(text: TextLayer) -> BoundLedger:
         free_time_end=free_time_end,
         allowed_free_time_days=allowed,
         stated_total=total,
+        charged_dates=_charged_dates(fields),
+        invoice_date=_optional_date(
+            fields, "invoice date", "invoice date", "date of invoice", "issue date"
+        ),
+        availability_date=_optional_date(
+            fields,
+            "availability date",
+            "container availability date",
+            "availability date",
+        ),
     )
 
 
