@@ -366,9 +366,10 @@ much stronger than either alone.
 
 ## 6. What is done, and what is left
 
-61 issues closed, 36 open, across six milestones. Measured at commit 8762d51
+61 issues closed, 37 open, across six milestones. Measured at commit 8762d51
 with `gh issue list --state closed --limit 500 --json number --jq length` and the
-same for `--state open`.
+same for `--state open`. The open figure includes #165, the refresh you are
+reading.
 
 | Milestone | Open | Closed | What it is |
 |---|---|---|---|
