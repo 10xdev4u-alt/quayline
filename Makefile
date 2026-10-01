@@ -5,6 +5,7 @@
 #   make validate   the gate: pytest, ruff check, ruff format check, mypy, index
 #   make format     apply ruff formatting and the autofixable lint rules
 #   make repo-state report live collaborator and branch protection state, change nothing
+#   make specimen   regenerate the public specimen page from the fixture corpus
 #   make fixtures-checksum
 #     recompute every tariff fixture checksum after a deliberate transcription edit
 #   make clean      remove build and cache artifacts
@@ -16,7 +17,7 @@ MYPY    := .venv/bin/mypy
 PYTEST  := .venv/bin/pytest
 PRECOMMIT := .venv/bin/pre-commit
 
-.PHONY: install validate format hooks clean index repo-state
+.PHONY: install validate format hooks clean index repo-state specimen
 
 # The dev group is declared in pyproject.toml and installed from there. Naming
 # the tools on the command line instead would let any older version already on
@@ -86,6 +87,15 @@ repo-state:
 # and only then commit.
 fixtures-checksum:
 	$(PY) scripts/recompute_fixture_checksums.py
+
+# The specimen page is generated, never written. `make specimen` is the only way it
+# comes into existence, so a hand edited page in web/specimen.html is a change with no
+# pull request behind it, which the repository hygiene test refuses.
+specimen:
+	@mkdir -p web
+	$(PY) -c "from quayline.web.render import generate; \
+		open('web/specimen.html','w',encoding='utf-8').write(generate())"
+	@echo "wrote web/specimen.html"
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov
