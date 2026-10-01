@@ -43,6 +43,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, TextIO
 
+from quayline.cli.coverage_cmd import add_parser as add_coverage_parser
+from quayline.cli.coverage_cmd import run_coverage
 from quayline.engine.audit import audit
 from quayline.engine.ordering import order_findings, strategy_for
 from quayline.engine.recovery import estimate_for
@@ -87,6 +89,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--terminal", default="", help="terminal or gateway, where it matters")
     run.add_argument("--invoice-ref", default="", help="override the invoice reference")
     run.add_argument("--json", action="store_true", help="emit the full result as JSON")
+    add_coverage_parser(sub)
     return parser
 
 
@@ -210,6 +213,9 @@ def main(argv: list[str] | None = None, stream: TextIO | None = None) -> int:
         return EXIT_ENGINE_ERROR
 
     args = parser.parse_args(argv)
+
+    if args.command == "coverage":
+        return run_coverage(args, out)
 
     try:
         run = _audit_one(args)
