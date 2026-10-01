@@ -83,8 +83,10 @@ def test_an_omission_finding_makes_the_whole_claim_automatic() -> None:
         Ground.DISCLOSURE_OMITTED,
         Ground.CONTRACT_CONDITION,
     }
-    assert full.section_for(Ground.DISCLOSURE_OMITTED).is_automatic is True
-    assert full.section_for(Ground.CONTRACT_CONDITION).is_automatic is False
+    omitted = full.section_for(Ground.DISCLOSURE_OMITTED)
+    arithmetic = full.section_for(Ground.CONTRACT_CONDITION)
+    assert omitted is not None and omitted.is_automatic is True
+    assert arithmetic is not None and arithmetic.is_automatic is False
 
 
 def test_the_amount_variance_claim_carries_the_money() -> None:
