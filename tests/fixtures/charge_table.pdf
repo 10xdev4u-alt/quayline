@@ -1,0 +1,70 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 599 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+1 0 0 1 72 700 Tm
+(DEMURRAGE AND DETENTION INVOICE) Tj
+1 0 0 1 72 684 Tm
+(Invoice Date: 2026-07-20) Tj
+1 0 0 1 72 668 Tm
+(Container: MAEU1234567) Tj
+1 0 0 1 72 640 Tm
+(Container) Tj
+1 0 0 1 220 640 Tm
+(Days) Tj
+1 0 0 1 300 640 Tm
+(Rate) Tj
+1 0 0 1 380 640 Tm
+(Amount) Tj
+1 0 0 1 72 624 Tm
+(MAEU1234567) Tj
+1 0 0 1 220 624 Tm
+(3) Tj
+1 0 0 1 300 624 Tm
+(100.00) Tj
+1 0 0 1 380 624 Tm
+(300.00) Tj
+1 0 0 1 72 608 Tm
+(TGHU7654321) Tj
+1 0 0 1 220 608 Tm
+(2) Tj
+1 0 0 1 300 608 Tm
+(100.00) Tj
+1 0 0 1 380 608 Tm
+(200.00) Tj
+1 0 0 1 72 592 Tm
+(TOTAL) Tj
+1 0 0 1 380 592 Tm
+(500.00) Tj
+ET
+
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000891 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+961
+%%EOF
