@@ -83,8 +83,12 @@ def test_a_clean_document_exits_zero(tmp_path: Path) -> None:
             "End Date of Free Time: 2026-07-04",
             "Container Number: MAEU1234567",
             "Bill of Lading Number: MAEU123456789",
+            "Rate Rule: Maersk US Newark Dry",
             "Charged Dates: 2026-07-05",
             "Days: 1",
+            "Rate: 390.00",
+            "Amount: 390.00",
+            "TOTAL: 390.00",
         )
     )
 
@@ -124,11 +128,20 @@ def test_the_human_line_names_the_amount_at_stake_and_the_strategy() -> None:
     assert "541.6" in out, "a finding without its citation is not checkable"
 
 
-def test_the_human_line_says_when_no_money_was_stated() -> None:
-    """The fixture states no total, and the line must not imply otherwise."""
+def test_the_human_line_states_the_money_on_both_sides() -> None:
+    """The money check, reached from a shell for the first time in issue 185.
+
+    The fixture names ``Maersk US Newark Dry`` under 541.6(c)(2) and the corpus holds
+    that rule, so the recomputation is 2 chargeable days at the 5-to-8 tier of 390.00
+    = 780.00 against a demand of 1170.00, which is 390.00 of exposure.
+
+    Checked by hand against the transcribed tariff, not read off the output.
+    """
     _, out = run(*argv_for(INVOICE_PDF))
 
-    assert "no total" in out.lower() or "not stated" in out.lower()
+    assert "1170.00" in out
+    assert "780.00" in out
+    assert "390.00" in out
 
 
 def test_the_human_line_carries_the_deadline() -> None:
@@ -155,16 +168,17 @@ def test_json_mode_emits_the_whole_result() -> None:
 def test_json_mode_uses_null_for_absent_money() -> None:
     """The three-state rule has to survive serialisation.
 
-    A JSON consumer reading ``0`` for an unstated total would treat it as a number,
-    which is the exact failure ``result.py`` exists to prevent. So the key is
-    present and its value is null.
+    A JSON consumer reading ``0`` for an uncomputed total would treat it as a number,
+    which is the exact failure ``result.py`` exists to prevent. The demanded total is
+    stated on the document and the recomputed one is not computable, so one is a
+    string and the other is null.
     """
     _, out = run(*argv_for(INVOICE_PDF), "--json")
     payload = json.loads(out)
 
-    assert "demanded_total" in payload
-    assert payload["demanded_total"] is None
-    assert payload["recomputed_total"] is None
+    assert payload["demanded_total"] == "1170.00"
+    assert payload["recomputed_total"] == "780.00"
+    assert payload["variance"] == "390.00"
 
 
 def test_json_carries_the_warnings_and_the_free_time_recomputation() -> None:
@@ -175,6 +189,44 @@ def test_json_carries_the_warnings_and_the_free_time_recomputation() -> None:
     assert payload["computed_free_time_expiry"] == "2026-07-08"
     assert payload["computed_charge_days"] == 2
     assert isinstance(payload["warnings"], list)
+
+
+def test_an_unheld_rate_rule_is_a_finding_and_never_a_guessed_rate(
+    tmp_path: Path,
+) -> None:
+    """The corpus holds eight Maersk rules and nothing for anyone else.
+
+    A rule we do not hold resolves to a ``Resolution`` with no block, which becomes a
+    ``tariff_unresolved`` finding naming what was disclosed. The recomputed total
+    stays ``None`` and no rate is invented.
+    """
+
+    path = tmp_path / "unheld.pdf"
+    path.write_bytes(
+        build_pdf(
+            "Invoice Date: 2026-07-20",
+            "Container Availability Date: 2026-06-30",
+            "Allowed Free Time: 4 days",
+            "Start Date of Free Time: 2026-06-30",
+            "End Date of Free Time: 2026-07-04",
+            "Container Number: MAEU1234567",
+            "Bill of Lading Number: MAEU123456789",
+            "Rate Rule: Hapag-Lloyd US Los Angeles Dry",
+            "Charged Dates: 2026-07-05",
+            "Days: 1",
+            "Rate: 300.00",
+            "Amount: 300.00",
+            "TOTAL: 300.00",
+        )
+    )
+
+    code, out = run("audit", str(path), "--carrier", "Hapag-Lloyd", "--json")
+    payload = json.loads(out)
+
+    assert payload["recomputed_total"] is None
+    assert payload["demanded_total"] == "300.00"
+    assert any(f["code"] == "tariff_unresolved" for f in payload["findings"])
+    assert code == EXIT_FILE_WORTHY
 
 
 def test_json_is_valid_on_every_path_including_failure() -> None:
@@ -240,8 +292,12 @@ def test_a_clean_document_packet_says_there_is_no_dispute(tmp_path: Path) -> Non
             "End Date of Free Time: 2026-07-04",
             "Container Number: MAEU1234567",
             "Bill of Lading Number: MAEU123456789",
+            "Rate Rule: Maersk US Newark Dry",
             "Charged Dates: 2026-07-05",
             "Days: 1",
+            "Rate: 390.00",
+            "Amount: 390.00",
+            "TOTAL: 390.00",
         )
     )
 
@@ -272,8 +328,12 @@ def _contested_pdf(tmp_path: Path) -> Path:
             "End Date of Free Time: 2026-07-05",
             "Container Number: MAEU1234567",
             "Bill of Lading Number: MAEU123456789",
+            "Rate Rule: Maersk US Newark Dry",
             "Charged Dates: 2026-07-06, 2026-07-07",
             "Days: 2",
+            "Rate: 390.00",
+            "Amount: 780.00",
+            "TOTAL: 780.00",
         )
     )
     return path

@@ -101,16 +101,19 @@ def test_the_overbilled_day_is_named_in_the_finding() -> None:
 # ------------------------------------------------- the money, and the absence
 
 
-def test_no_recomputed_total_when_the_document_states_none() -> None:
+def test_no_recomputed_total_when_no_tariff_is_supplied() -> None:
     """The rule that matters most.
 
-    The fixture states no rate and no total, so there is no money to compare and
-    ``recomputed_total`` must be ``None``. A zero here would be quoted in a demand
-    letter as the correct total.
+    The fixture states a total of 1170.00 and names the rule it billed under, and the
+    corpus holds that rule. Without a tariff passed in, ``recomputed_total`` is still
+    ``None`` and a zero would be quoted in a demand letter as the correct total.
+
+    Issue 185 wires the corpus in, so this test becomes narrower: it now asserts the
+    refusal rather than the absence of a document field.
     """
     result = audit(INVOICE_PDF.read_bytes(), carrier="Maersk", terminal="newark")
 
-    assert result.demanded_total is None
+    assert result.demanded_total == Decimal("1170.00")
     assert result.recomputed_total is None
     assert result.variance is None
 
@@ -192,6 +195,7 @@ def test_a_document_with_money_compares_it() -> None:
             "Container Number: MAEU1234567",
             "Bill of Lading Number: MAEU123456789",
             "Charged Dates: 2026-07-09, 2026-07-10",
+            "Rate Rule: Maersk US Newark Dry",
             "Days: 2",
             "Rate: 100.00",
             "Amount: 200.00",

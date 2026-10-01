@@ -175,13 +175,12 @@ def audit(
             )
         )
 
+    # Every bound document states a total, because 541.6(c)(1) requires one and an
+    # absent total is an omission raised at bind time. The ``None`` case that used to
+    # live here is unreachable, and mypy says so.
     demanded = bound.stated_total
     recomputed: Decimal | None = None
-    if demanded is None:
-        # The document states no money. There is nothing to compare, and zero would
-        # be our arithmetic in the carrier's mouth.
-        pass
-    elif tariff is None or not tariff.resolved or tariff.block is None:
+    if tariff is None or not tariff.resolved or tariff.block is None:
         findings.append(
             Finding(
                 code=CODE_TARIFF_UNRESOLVED,
@@ -213,6 +212,13 @@ def audit(
                     cite=CITE_TOTAL,
                     summary=lines[0] if lines else "the charge exceeds the recomputed amount",
                     detail="\n".join(lines),
+                    # Not DISCLOSURE_OMITTED. The carrier disclosed the rule and the
+                    # rate and the total, and we priced them from the carrier's own
+                    # declared rule. Nothing is missing, so 541.5 does not fire and
+                    # this is not automatic. It is an arithmetic claim the carrier can
+                    # answer by redoing the multiplication, and the recomputation is
+                    # what we are showing them.
+                    grounds=(Ground.CONTRACT_CONDITION,),
                 )
             )
 

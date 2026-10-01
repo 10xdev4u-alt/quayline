@@ -102,7 +102,7 @@ def test_a_born_digital_fixture_parses_with_no_ocr_in_the_path() -> None:
     layer = extract_text_layer(fixture_bytes())
     assert layer.status is TextLayerStatus.READABLE
     assert layer.needs_fallback is False
-    assert len(layer.lines) == 9
+    assert len(layer.lines) == 14
     assert "DEMURRAGE AND DETENTION INVOICE" in layer.text
 
 
