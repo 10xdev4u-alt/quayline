@@ -165,7 +165,10 @@ def test_no_amount_is_counted_twice() -> None:
 def test_queue_entries_are_immutable() -> None:
     (entry,) = queue({"INV-1": D("4800")}, ())
     assert isinstance(entry, QueueEntry)
-    with pytest.raises(AttributeError):
+    # AttributeError on 3.14, TypeError on 3.12: frozen slots raise differently
+    # across versions, and the property that matters is that the write fails,
+    # not which exception type it fails with.
+    with pytest.raises((AttributeError, TypeError)):
         entry.status = "x"  # type: ignore[misc]
 
 
