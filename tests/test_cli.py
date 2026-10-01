@@ -183,3 +183,67 @@ def test_json_is_valid_on_every_path_including_failure() -> None:
     payload = json.loads(out)
     assert payload["error"]
     assert "findings" not in payload or payload["findings"] == []
+
+
+# ------------------------------------------------------------------ the packet
+
+
+def test_the_packet_flag_prints_the_letter_a_carrier_reads(tmp_path: Path) -> None:
+    """The document a customer pays for, reachable without a Python shell.
+
+    Issue 85 asks a person to audit ten invoices by hand. If seeing the letter
+    requires a script, the friction lands on the experiment that decides whether this
+    is a company.
+    """
+    code, out = run(*argv_for(INVOICE_PDF), "--packet")
+
+    assert code == EXIT_FILE_WORTHY
+    assert "Automatic claims" in out
+    assert "2026-07-08" in out, "the letter names the days, not just a count"
+
+
+def test_the_packet_reports_whether_it_can_be_filed() -> None:
+    """``can_file`` is the gate, and it belongs on the operator's screen."""
+    _, out = run(*argv_for(INVOICE_PDF), "--packet")
+
+    assert "can be filed" in out or "cannot be filed" in out
+
+
+def test_packet_and_json_together_are_refused_not_silently_resolved() -> None:
+    """Two output formats with different contracts cannot both win.
+
+    Silently picking one is how a pipeline asking for JSON starts receiving prose.
+    """
+    code, out = run(*argv_for(INVOICE_PDF), "--packet", "--json")
+
+    assert code == EXIT_ENGINE_ERROR
+    assert "--packet" in out and "--json" in out
+
+
+def test_the_packet_still_exits_two_when_the_engine_fails() -> None:
+    code, _ = run("audit", "no-such-file.pdf", "--carrier", "Maersk", "--packet")
+
+    assert code == EXIT_ENGINE_ERROR
+
+
+def test_a_clean_document_packet_says_there_is_no_dispute(tmp_path: Path) -> None:
+    """No findings must not render a letter that reads like a demand."""
+    clean = tmp_path / "clean.pdf"
+    clean.write_bytes(
+        build_pdf(
+            "Invoice Date: 2026-07-20",
+            "Container Availability Date: 2026-06-30",
+            "Allowed Free Time: 4 days",
+            "Start Date of Free Time: 2026-06-30",
+            "End Date of Free Time: 2026-07-04",
+            "Container Number: MAEU1234567",
+            "Bill of Lading Number: MAEU123456789",
+            "Charged Dates: 2026-07-05",
+            "Days: 1",
+        )
+    )
+
+    code, out = run(*argv_for(clean), "--packet")
+
+    assert code == EXIT_CLEAN
+    assert "no dispute" in out.lower()
