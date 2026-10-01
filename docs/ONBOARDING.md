@@ -243,7 +243,9 @@ the merge" while `GET /branches/main/protection` returns 404.
 
 ### Every pull request so far, in order
 
-Twenty-six merged. The first five are bootstrap; the rest are product.
+Sixty-four merged, measured with `gh pr list --state merged`. The first five are
+bootstrap, the rest are product. Four shipped no issue link, which is a process
+gap rather than a problem with the work, and they are marked.
 
 | PR | Issue | What landed |
 |---|---|---|
@@ -273,6 +275,44 @@ Twenty-six merged. The first five are bootstrap; the rest are product.
 | #122 | #59 | Evidence packet renderer, grouped by ground |
 | #123 | #121 | Completed the `.githooks` hooks path |
 | #124 | #61 | Capturer identity on every capture |
+| #125 | none | This onboarding document |
+| #127 | #126 | Tool artifacts ignored, and the index checked |
+| #128 | #92 | The reviewer disposition rule, closing the panel question |
+| #130 | #28 | Tariff resolution returning a result rather than a guess |
+| #131 | #31 | Availability contradiction from the invoice alone |
+| #132 | #32 | Freight term evidence for the liability basis |
+| #133 | #129 | Co-author check tightened to the email address |
+| #134 | #38 | The audit result contract and public surface |
+| #135 | #34 | Findings ordered so automatic wins lead the letter |
+| #136 | #37 | Typed warnings for the model limits |
+| #137 | none | A lint for a recurring fixture mistake |
+| #138 | #35 | Recovery estimate capped at the amount demanded |
+| #139 | #39 | Corpus of transcribed tariff fixtures |
+| #140 | #36 | Day-count findings demoted when the tariff resolves |
+| #141 | #33 | The e2 certification test hook |
+| #142 | none | Certification check renamed |
+| #143 | #10 | Maersk appointment-demand closure rule |
+| #144 | #4 | Process-only semantics for 541.8 findings |
+| #145 | #5 | Two engines with different burden priors |
+| #146 | #7 | Evergreen three-element per-day test |
+| #147 | #22 | MSC charges normalised by physical locus |
+| #148 | #24 | ONE partial shift and post-pull check |
+| #149 | #25 | ZIM rules with rates marked UNVERIFIED |
+| #150 | #15 | Hapag waiver conditions D06 and D07 |
+| #151 | #13 | Hapag per-terminal schedules, no rates |
+| #152 | #14 | Hapag detention schedules with required haulage |
+| #153 | #17 | Maersk clusters and the PCD lock |
+| #154 | #19 | CMA CGM bundle, Baltimore verified |
+| #155 | #20 | CMA CGM California carve-out and rail |
+| #156 | #21 | MSC pass-through lanes and the dedupe check |
+| #157 | #26 | Evergreen terminal directory, five rows |
+| #158 | #27 | Uncovered carriers registered with acquisition tasks |
+| #159 | #41 | Table-aware charge line extraction |
+| #160 | #49 | Content-hashed append-only ingest log |
+| #161 | #46 | Terminal-plus-carrier double invoice detection |
+| #162 | #48 | Money normalised before comparison |
+| #163 | #44 | Multi-container lines and dispute groups |
+| #164 | #45 | Credit notes as their own document type |
 
 Probe pull requests #96 and #98 were opened to prove branch protection actually
 blocks, then closed. Proving a control works is part of shipping it.
@@ -281,9 +321,11 @@ blocks, then closed. Proving a control works is part of shipping it.
 
 ## 5. What the codebase looks like
 
-5,726 lines across 24 modules, 553 tests, zero runtime dependencies. Dev tools only:
-ruff, mypy, pytest. The test count moves as work lands, so treat `make validate`
-output as the number and this one as roughly right.
+11,139 lines across 50 modules, 1,207 tests, zero runtime dependencies. Dev tools
+only: ruff, mypy, pytest. Measured at commit 8762d51 with
+`find src -name '*.py' ! -name '__init__.py' | xargs wc -l` and `pytest
+--collect-only -q`. These numbers move as work lands, so treat `make validate`
+output as authoritative and this paragraph as a snapshot with a date on it.
 
 ```
 src/quayline/
@@ -324,59 +366,57 @@ much stronger than either alone.
 
 ## 6. What is done, and what is left
 
-26 issues closed, 69 open, across six milestones.
+61 issues closed, 37 open, across six milestones. Measured at commit 8762d51
+with `gh issue list --state closed --limit 500 --json number --jq length` and the
+same for `--state open`. The open figure includes #165, the refresh you are
+reading.
 
 | Milestone | Open | Closed | What it is |
 |---|---|---|---|
-| M1 core engine | 26 | 16 | The recomputation. The regulation, the calendars, the tariffs. |
-| M2 ingestion | 8 | 2 | Getting a document in and checking it. |
+| M1 core engine | 0 | 42 | The recomputation. The regulation, the calendars, the tariffs. |
+| M2 ingestion | 2 | 8 | Getting a document in and checking it. |
 | M3 evidence and filing | 12 | 3 | Proving it, and sending it. |
 | M4 integrations | 10 | 0 | Carrier and terminal APIs. |
-| M5 platform and site | 7 | 4 | CLI, public site, the docs. |
+| M5 platform and site | 6 | 5 | CLI, public site, the docs. |
 | M6 validation | 6 | 0 | The phase zero experiment. |
 
-M1's "core engine" issues look 16/42 done but the *load bearing* ones are done:
-the checklist, the vacatur, the deadlines, the recomputation paths, the closure
-model, the holiday calendar, the day-count arithmetic. What remains in M1 is
-mostly **tariff data loading**, and that is deliberate, because tariff data is
-transcription work with a real cost and it is not where the risk is.
+**M1 is closed, all 42 of it.** Everything load bearing is built: the checklist,
+the vacatur, the deadlines, both recomputation paths, the closure model, the
+holiday calendar, the day-count arithmetic, and the tariff blocks for Hapag,
+Maersk, CMA CGM, ONE, MSC, ZIM and Evergreen. The two tariff issues that are
+genuinely holes rather than code are #26 and #27, and both landed as explicit
+acquisition tasks instead of as guesses, which is the outcome the repo wanted.
+
+An earlier version of this document ranked #28, #31, #32, #34, #37, #38 and #39 as
+the top remaining work. All seven are closed. Pull requests #130 through #139
+delivered them on 30 September. If you are reading that list somewhere, it is
+history.
+
+### The one structural gap, and it is not a milestone
+
+`AGENTS.md` section six describes nine packages under `src/quayline/`. Four of
+them do not exist: `filing/`, `fmc/`, `cli/` and `web/`. There is no `audit()`
+function anywhere in `src/`, and the only one in the repository is a test helper in
+`tests/test_ordering.py`.
+
+So the pieces are built and nothing joins them. `ingest/` produces validated
+documents, `engine/` produces an `AuditResult`, `evidence/packet.py` assembles a
+dispute packet, and there is no entry point that runs one document through all
+three. The engine recomputes and there is no product on top of it yet.
+
+That gap is why #79 is the highest value open issue. It is not a CLI feature, it
+is the missing spine, and #84 needs the same spine.
 
 ### The order I would take the remaining work in
 
-**M1 first, because everything downstream is weaker without it.**
+**First, the spine.** One function that takes a document, runs the checks, and
+returns an `AuditResult`. Then #79 on top of it, which is the CLI: a human triage
+line, a JSON mode, and exit codes that distinguish no findings, filing-worthy
+findings, and an engine error. #84 then reports what the engine does not know,
+which is the same code path with a different question asked of it.
 
-Highest value, in order:
-
-1. **#28 tariff resolution returning `None` rather than a guess.** This is the
-   single most important issue remaining. Every tariff module currently resolves
-   to a block; this makes "we do not have this terminal" a first-class answer
-   instead of a guess. It is the MSC problem from section 1, solved in the type.
-2. **#31 the availability contradiction check, using the invoice alone.** Pure
-   arithmetic, no external data, and it is a 541.6(b)(6) finding the carrier
-   cannot argue with because they disclosed both dates.
-3. **#32 the liability-basis check on the surviving 541.6(a)(4).** The strongest
-   hook surviving the vacatur of 541.4. #115 built the module; this wires it in.
-4. **#34 order findings so automatic wins lead the dispute letter.** Half done in
-   `evidence/packet.py`. Finishing it changes what a letter achieves.
-5. **#38 the audit result contract and public API surface.** Everything downstream
-   needs a stable shape to build against. Do this before the CLI.
-6. **#37 the typed warning system for model limits.** Directly serves the coverage
-   report in #84 and the research backlog in #83.
-7. **#39 the fixture corpus transcribed from real carrier tariffs.** This is the
-   single highest-leverage non-code item in the backlog. Every tariff bug we will
-   ever find is a transcription bug, and a corpus is how you find them.
-
-Then tariff data, in this order because it is cheapest first: #22 MSC label
-inversion, #24 ONE partial-shift and post-pull, #25 ZIM marked `UNVERIFIED`,
-#17 Maersk cluster blocks, #13 Hapag per-terminal blocks. #26 and #27 are
-acquisition tasks, not code, and #27 is explicitly a hole-we-ship item.
-
-**Then M2**, because filing is blocked on ingestion being trustworthy. #41 table
-extraction for the buried charge table, then #49 persist the raw document with a
-content hash, then #46 the terminal-plus-carrier double invoice, which is a real
-scam and a genuinely good differentiator.
-
-**Then M3**, and note the sequencing: #50 appointment screenshot spec and #51
+**Then M3, because filing is blocked on evidence.** Note the sequencing: #50
+appointment screenshot spec and #51
 per-day evidence come before #62 submission adapters, because an adapter that
 sends an incomplete packet is worse than no adapter.
 
@@ -392,12 +432,15 @@ expensive way to be wrong. Do not skip M6 in favour of M4.
 
 ### The open decisions that are not yours to make
 
-- **#92, reviewers outside the named panel.** What does meaningful review mean
-  when the reviewer is the author under a second account? This one is a policy
-  decision with real consequences and it is the one I would not decide alone.
+- **#92, reviewers outside the named panel.** Partly answered. PR #128 closed it
+  by writing the disposition rule into `AGENTS.md` section one: judge the finding
+  on its merits, and only involve identity when deciding to dismiss. What remains
+  open is whether a human who is not the author ever reviews, which is a policy
+  decision with real consequences and not one to decide alone. Section three of
+  this document says plainly that every approval so far has been self-review under
+  a second account.
 - **#90, pricing from measured data.** Blocked on #85. Any number before the
   experiment is a guess we would have to defend.
-- **#79, the CLI surface.** Depends on #38 landing first.
 - **#81, the visual system.** Depends on #80.
 
 ---
@@ -506,8 +549,12 @@ the integrations are always almost done.
 5. Read `src/quayline/evidence/checklist.py` and notice that the whole file is
    `UNVERIFIED`. Ask yourself what it means to ship that, and whether the gate is
    honest enough about it.
-6. Pick up #28. It is the highest-value open issue and it is the type-level
-   version of the MSC problem.
+6. Read `src/quayline/engine/result.py`, the `AuditResult` contract. Then grep
+   for `def audit` in `src/` and find nothing. Everything the engine computes has
+   no entry point, and closing that is the first work worth taking.
+7. Pick up #79, and raise the missing-spine issue before you start it. The CLI is
+   a thin layer over a function that does not exist yet, so the orchestrator is the
+   real work and the command line is the proof.
 
 When you open your first pull request, the reviewer's job is to validate it against
 the issue, not against taste. Write the pull request body so that someone who has
