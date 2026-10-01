@@ -19,7 +19,7 @@ from quayline.engine.ordering import (
     TIER_UNCLASSIFIED,
     OrderedFinding,
     order_findings,
-    render_letter,
+    render_digest,
     strategy_for,
     tier_of,
 )
@@ -241,14 +241,14 @@ def test_the_strategy_counts_every_tier() -> None:
 
 def test_the_renderer_uses_the_order() -> None:
     """Criterion four."""
-    text = render_letter(strategy_for(audit(*EVERY_TIER)), order_findings(audit(*EVERY_TIER)))
+    text = render_digest(strategy_for(audit(*EVERY_TIER)), order_findings(audit(*EVERY_TIER)))
     assert text.index("rates not disclosed") < text.index("invoiced outside the window")
     assert text.index("invoiced outside the window") < text.index("day count differs")
     assert text.index("day count differs") < text.index("tariff did not resolve")
 
 
 def test_the_renderer_leads_with_the_headline() -> None:
-    text = render_letter(strategy_for(audit(*EVERY_TIER)), order_findings(audit(*EVERY_TIER)))
+    text = render_digest(strategy_for(audit(*EVERY_TIER)), order_findings(audit(*EVERY_TIER)))
     assert text.startswith("Compliance notice")
 
 
@@ -257,18 +257,18 @@ def test_the_renderer_names_the_citation_for_each_claim() -> None:
     result = audit(
         Finding(code=CODE_FIELD_OMITTED, cite="541.6(c)(3)", summary="Rates not disclosed")
     )
-    text = render_letter(strategy_for(result), order_findings(result))
+    text = render_digest(strategy_for(result), order_findings(result))
     assert "541.6(c)(3)" in text
 
 
 def test_the_renderer_says_nothing_to_send_on_an_empty_audit() -> None:
     result = AuditResult(carrier="Maersk")
-    assert "No findings" in render_letter(strategy_for(result), order_findings(result))
+    assert "No findings" in render_digest(strategy_for(result), order_findings(result))
 
 
 def test_the_renderer_is_deterministic() -> None:
     result = audit(*EVERY_TIER)
-    assert render_letter(strategy_for(result), order_findings(result)) == render_letter(
+    assert render_digest(strategy_for(result), order_findings(result)) == render_digest(
         strategy_for(result), order_findings(result)
     )
 
