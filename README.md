@@ -53,8 +53,16 @@ carrier data produces plausible, silent, wrong answers.
 
 ## Status
 
-Under construction. The engine, the ingestion layer and the dispute filing path
-are all open. The issue set on GitHub is the backlog.
+The core engine is complete, all 42 issues of milestone M1 closed. The ingestion
+layer is eight of ten. There is no entry point: no function takes a document and
+returns an audit result, so the pieces are built and nothing joins them. Issue 167
+is that gap. The evidence and filing milestone is three of fifteen, and the
+integrations milestone has not started.
+
+Before any of it matters, ten real invoices have to be audited by hand and shown to
+collect. The pass mark and the kill criteria are written down in
+[006-phase-zero-gates.md](docs/research/006-phase-zero-gates.md), dated, before the
+experiment runs. The issue set on GitHub is the backlog.
 
 ## Building and validating
 
@@ -88,6 +96,7 @@ Everything we know is in `docs/research/`, dated and sourced. Claims are labelle
 | [003-integration.md](docs/research/003-integration.md) | Invoice ingestion, EDI transaction sets, carrier dispute channels, carrier developer APIs, TMS surfaces, terminal data |
 | [004-evidence.md](docs/research/004-evidence.md) | Appointment screenshot specs, the interchange receipt, gate logs, customs holds, admissibility |
 | [005-market.md](docs/research/005-market.md) | The pool, the competitors, the unit economics, the exit |
+| [006-phase-zero-gates.md](docs/research/006-phase-zero-gates.md) | The pass mark and the kill criteria for the ten-invoice experiment, fixed before it runs |
 
 ## Legal status
 
