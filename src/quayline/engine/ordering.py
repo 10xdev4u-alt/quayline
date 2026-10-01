@@ -232,13 +232,17 @@ def strategy_for(result: AuditResult) -> ClaimStrategy:
     )
 
 
-def render_letter(strategy: ClaimStrategy, ordered: tuple[OrderedFinding, ...]) -> str:
-    """The claim order, as text.
+def render_digest(strategy: ClaimStrategy, ordered: tuple[OrderedFinding, ...]) -> str:
+    """The triage digest: what to argue first, and why.
 
-    A renderer because the output of this is a letter and the letter is what gets
-    reviewed and sent. This renders the *order* only; the packet in
-    ``evidence/packet.py`` renders evidence, and the two are kept apart so that a
-    change to how evidence is grouped does not reorder claims and vice versa.
+    **Not the letter.** The letter is ``evidence.packet.render``, grouped by ground
+    because a claim is a concession and a carrier concedes one thing at a time. This
+    is ordered by tier because a reviewer needs to see the strongest claim first.
+
+    Renamed from ``render_letter`` in issue 176. Two functions both documented as
+    rendering a letter is how a filing path ends up with two opinions on what gets
+    sent, and only one of them was reachable from an audit. The name now says what
+    this actually produces.
     """
     lines = [strategy.headline(), ""]
     if not ordered:
@@ -265,7 +269,7 @@ __all__ = [
     "ClaimStrategy",
     "OrderedFinding",
     "order_findings",
-    "render_letter",
+    "render_digest",
     "strategy_for",
     "tier_of",
 ]
