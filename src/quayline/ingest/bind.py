@@ -1,0 +1,393 @@
+"""Issue 167, first half: binding an extracted text layer to a structured ledger.
+
+The ``Ledger`` docstring in ``validate.py`` says the field binder that turns a
+``TextLayer`` into a ``Ledger`` is a separate concern. This is that binder, and
+writing it showed why it was separate: ``TextLayer`` and ``Ledger`` do not carry
+the same fields, so nothing converts between them without deciding what happens to
+the ones that have no counterpart.
+
+What the two fixtures state, and why it matters
+
+``born_digital_invoice.pdf`` states free time, both endpoints, the charged dates and
+the container. It does **not** state a rate and does **not** state a total.
+
+``charge_table.pdf`` states the container, days, rate, amount and total, and states
+**no free time at all**.
+
+So the two fixtures are mirror images of each other, and neither one produces a
+``Ledger``. That is not a gap in the binder, it is the honest shape of the problem,
+and it forced the design below.
+
+One type, with an absent total
+
+``BoundLedger`` carries what both forms have, and carries ``stated_total`` as
+``Decimal | None``. ``None`` means the document stated no total. It is never zero.
+
+Zero is a claim about the carrier's arithmetic. ``None`` is a claim about our
+reading of the document. Collapsing them would let a missing rate become a
+zero-dollar dispute, and would let ``validate.py`` report a line that adds up
+against a total nobody stated.
+
+``to_ledger()`` is the gate. It returns a ``Ledger`` when the money is there and
+raises when it is not, so a caller cannot accidentally audit money that was never
+disclosed.
+
+What this cannot do
+
+It cannot tell a missing field from a field on a later page we have not been
+given, and it does not guess carrier identity. 541.6 never asks a carrier to name
+itself on the face of the invoice, so carrier selection is a parameter here, the
+same argument ``engine/daycount.py`` makes.
+
+Fail closed, and name the line
+
+Every failure raises ``BindError`` carrying the line that could not be used. A
+binder that said "validation failed" would leave the person holding the document
+unable to say which line we could not read, which is the failure mode
+``docs/research/004-evidence.md`` names for the whole dispute layer.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+
+from quayline.ingest.pdftext import TextLayer
+from quayline.ingest.validate import InvoiceLine, Ledger
+from quayline.models.invoice import (
+    CITE_ALLOWANCE,
+    CITE_CHARGED_DATES,
+    CITE_FREE_TIME_END,
+    CITE_FREE_TIME_START,
+    CITE_TOTAL,
+)
+
+#: 541.5, the omission clause. Encoded in ``regulation/kill_switch.py`` with the
+#: section number verified in issue 1. Named here because ``OmittedError`` is the
+#: one error that becomes a finding rather than a stop.
+CITE_OMISSION = "541.5"
+
+#: Matches a labelled value at the start of a line. The label set is deliberately
+#: small: every alias added here is a field we will then claim to have read.
+_LABELLED = re.compile(r"^(?P<label>[A-Za-z][A-Za-z /]*?):\s*(?P<value>.+?)\s*$")
+
+_DATE_FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%d-%b-%Y", "%B %d, %Y")
+
+
+class BindError(ValueError):
+    """The document cannot be bound, and here is the line that says why.
+
+    A ``ValueError`` because an unbindable document is a bad argument to the next
+    stage, not an internal fault. The message always quotes what was read.
+    """
+
+
+class OmittedError(BindError):
+    """A required disclosure is absent from the document.
+
+    This is the strongest finding the engine makes and it is a different kind of
+    thing from an unreadable document, so it is a different type.
+
+    541.5 makes the omission automatic. No cure period, no showing of prejudice.
+    ``docs/research/001-regulation.md`` records that, and the check table in the
+    README calls it automatic for exactly that reason.
+
+    So the binder must not confuse "the carrier left it out" with "we could not
+    read it". The first is the finding. The second is our failure, and reporting
+    it against the carrier would be the most expensive error available in this
+    pipeline, because it is a false accusation built on our own extraction
+    defect.
+
+    ``tests/fixtures/charge_table.pdf`` is a real example. It states a container,
+    days, rate, amount and total, and no free time at all.
+    """
+
+    def __init__(self, field: str, cite: str) -> None:
+        super().__init__(
+            f"{cite} requires the {field} and the document does not state it. "
+            f"541.5 makes the omission automatic: no cure period and no showing "
+            f"of prejudice. This is a finding against the carrier, not an "
+            f"extraction fault."
+        )
+        self.field = field
+        self.cite = cite
+
+
+@dataclass(frozen=True, slots=True)
+class BoundLedger:
+    """A bound document, with the money present or honestly absent.
+
+    Every field is what the carrier wrote. ``stated_total`` is ``None`` when the
+    document states no total, and there is no way to build one with a value, which
+    is the point.
+    """
+
+    lines: tuple[InvoiceLine, ...]
+    free_time_start: date
+    free_time_end: date
+    allowed_free_time_days: int
+    stated_total: Decimal | None = None
+
+    @property
+    def has_money(self) -> bool:
+        return self.stated_total is not None
+
+    def why_no_money(self) -> str:
+        """The sentence a caller shows when it wanted money and there is none."""
+        if self.has_money:
+            return ""
+        return (
+            "the document states no total, so the money cannot be checked and "
+            "the arithmetic checks in validate.py do not apply"
+        )
+
+    def to_ledger(self) -> Ledger:
+        """The ``Ledger`` for ``validate.validate``, or a refusal.
+
+        The gate. A caller that wants the money has to ask for it explicitly and
+        find out whether it is there.
+        """
+        if self.stated_total is None:
+            raise BindError(
+                f"this document states no total, so there is no Ledger to build. "
+                f"{self.why_no_money()}. The day count can still be recomputed from "
+                f"the timing, which is the check that needs no money."
+            )
+        return Ledger(
+            lines=self.lines,
+            stated_total=self.stated_total,
+            free_time_start=self.free_time_start,
+            free_time_end=self.free_time_end,
+            allowed_free_time_days=self.allowed_free_time_days,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _Fields:
+    """Raw labelled values, before any of them is trusted."""
+
+    values: dict[str, str]
+    line_of: dict[str, str]
+
+    def get(self, *labels: str) -> str | None:
+        for label in labels:
+            found = self.values.get(label.lower())
+            if found is not None:
+                return found
+        return None
+
+    def require(self, field: str, *labels: str, cite: str = CITE_OMISSION) -> str:
+        """Demand a disclosure, or raise ``OmittedError``.
+
+        The ``cite`` defaults to 541.5 because a required field that is absent is
+        an omission, and an omission is the finding. A caller passes a different
+        cite only where the absence is our problem rather than the carrier's, and
+        there is no such caller today.
+        """
+        found = self.get(*labels)
+        if found is None:
+            raise OmittedError(field, cite)
+        return found
+
+    def quoted(self, label: str, fallback: str) -> str:
+        return self.line_of.get(label.lower(), fallback)
+
+
+def _scan(text: TextLayer) -> _Fields:
+    """Collect labelled values, keeping the line each came from."""
+    if text.needs_fallback:
+        reason = (
+            f"{text.undecodable_strings} string(s) could not be decoded"
+            if text.undecodable_strings
+            else f"text layer status is {text.status.value}"
+        )
+        raise BindError(
+            f"the text layer is not complete, so the document cannot be bound "
+            f"without reporting a missing disclosure that is our own fault. "
+            f"Reason: {reason}. It matters because needs_fallback is True, which "
+            f"means a field may be missing for a reason that has nothing to do "
+            f"with the carrier."
+        )
+
+    values: dict[str, str] = {}
+    line_of: dict[str, str] = {}
+    for raw in text.lines:
+        matched = _LABELLED.match(raw.strip())
+        if matched is None:
+            continue
+        label = matched.group("label").strip().lower()
+        value = matched.group("value").strip()
+        if label not in values:
+            values[label] = value
+            line_of[label] = raw.strip()
+    return _Fields(values=values, line_of=line_of)
+
+
+def _parse_date(token: str) -> date | None:
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(token, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _date(fields: _Fields, field: str, cite: str, *labels: str) -> date:
+    raw = fields.require(field, *labels, cite=cite)
+    parsed = _parse_date(raw)
+    if parsed is None:
+        raise BindError(
+            f"the {field} is not a date we can read. The line says "
+            f"{fields.quoted(labels[0], raw)!r}. Accepted formats: "
+            f"{', '.join(_DATE_FORMATS)}."
+        )
+    return parsed
+
+
+def _int(fields: _Fields, field: str, cite: str, *labels: str) -> int:
+    raw = fields.require(field, *labels, cite=cite)
+    token = raw.split()[0] if raw.split() else raw
+    try:
+        value = int(token)
+    except ValueError as exc:
+        raise BindError(
+            f"the {field} is not a whole number. The line says {fields.quoted(labels[0], raw)!r}."
+        ) from exc
+    if value < 0:
+        raise BindError(
+            f"the {field} is {value}, which is our misreading rather than the "
+            f"carrier's bill. The line says {fields.quoted(labels[0], raw)!r}."
+        )
+    return value
+
+
+def _decimal(fields: _Fields, field: str, cite: str, *labels: str) -> Decimal:
+    raw = fields.require(field, *labels, cite=cite)
+    token = raw.replace(",", "").replace("$", "").strip()
+    try:
+        return Decimal(token)
+    except InvalidOperation as exc:
+        raise BindError(
+            f"the {field} is not an amount we can read. The line says "
+            f"{fields.quoted(labels[0], raw)!r}."
+        ) from exc
+
+
+def _charged_dates(fields: _Fields) -> tuple[date, ...]:
+    """Parse 541.6(b)(8)'s dates, which arrive as one comma separated line.
+
+    A single unparseable entry fails the whole bind rather than being skipped. A
+    partial day set is a recomputation over an incomplete window, and the carrier
+    cannot be asked to explain an arithmetic we did not finish.
+    """
+    raw = fields.require("charged dates", "charged dates", "charged date", cite=CITE_CHARGED_DATES)
+    where = fields.quoted("charged dates", raw)
+    days: list[date] = []
+    for token in raw.split(","):
+        cleaned = token.strip()
+        if not cleaned:
+            continue
+        parsed = _parse_date(cleaned)
+        if parsed is None:
+            raise BindError(
+                f"one of the charged dates is not a date we can read: "
+                f"{cleaned!r}. The line says {where!r}. Every entry is required, "
+                f"because a partial day set prices an incomplete window."
+            )
+        days.append(parsed)
+    if not days:
+        raise OmittedError("charged dates", CITE_CHARGED_DATES)
+    if len(set(days)) != len(days):
+        raise BindError(
+            f"the charged dates repeat a day. Duplicates belong to the "
+            f"arithmetic check, not to the day set. The line says {where!r}."
+        )
+    return tuple(sorted(days))
+
+
+def _charge_lines(fields: _Fields) -> tuple[InvoiceLine, ...]:
+    """Build invoice lines, taking the money only if the document states it.
+
+    Days come from the stated chargeable days when there is one and from the count
+    of charged dates otherwise. Never from the money.
+    """
+    container = fields.get("container number", "container") or ""
+    bol = fields.get("bill of lading number", "bill of lading", "bol") or ""
+
+    days_raw = fields.get("days", "chargeable days")
+    days_stated = _int(fields, "days", CITE_ALLOWANCE, "days", "chargeable days") if days_raw else 0
+    dates = _charged_dates(fields)
+    days = len(dates) if days_stated == 0 else days_stated
+
+    rate = _decimal(fields, "rate", CITE_TOTAL, "rate") if fields.get("rate") else Decimal(0)
+    amount = (
+        _decimal(fields, "amount", CITE_TOTAL, "amount") if fields.get("amount") else Decimal(0)
+    )
+    return (
+        InvoiceLine(
+            container_number=container,
+            bol_number=bol,
+            chargeable_days=days,
+            rate=rate,
+            amount=amount,
+        ),
+    )
+
+
+def bind_ledger(text: TextLayer) -> BoundLedger:
+    """Bind a text layer to a ledger, or say why it cannot be bound."""
+    fields = _scan(text)
+
+    free_time_start = _date(
+        fields,
+        "free time start",
+        CITE_FREE_TIME_START,
+        "start date of free time",
+        "free time start",
+    )
+    free_time_end = _date(
+        fields,
+        "free time end",
+        CITE_FREE_TIME_END,
+        "end date of free time",
+        "free time end",
+    )
+    allowed = _int(fields, "allowance", CITE_ALLOWANCE, "allowed free time", "free time allowed")
+    if allowed < 1:
+        raise BindError(
+            f"541.6(b)(3) requires an allowance of at least one day, got {allowed}. "
+            f"The line says {fields.quoted('allowed free time', 'Allowed Free Time')!r}."
+        )
+
+    total_raw = fields.get("total", "invoice total", "total due")
+    total = (
+        _decimal(fields, "total", CITE_TOTAL, "total", "invoice total", "total due")
+        if total_raw
+        else None
+    )
+
+    if total is not None and fields.get("rate") is None:
+        raise BindError(
+            "the document states a total but no rate, so the money cannot be "
+            "checked. A total with no rate is an extraction error, and it is ours."
+        )
+
+    lines = _charge_lines(fields)
+
+    return BoundLedger(
+        lines=lines,
+        free_time_start=free_time_start,
+        free_time_end=free_time_end,
+        allowed_free_time_days=allowed,
+        stated_total=total,
+    )
+
+
+__all__ = [
+    "BindError",
+    "BoundLedger",
+    "OmittedError",
+    "bind_ledger",
+]
