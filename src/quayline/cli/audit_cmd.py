@@ -45,12 +45,15 @@ from typing import Any, TextIO
 
 from quayline.cli.coverage_cmd import add_parser as add_coverage_parser
 from quayline.cli.coverage_cmd import run_coverage
+from quayline.cli.evidence_args import KINDS, EvidenceArgsError, capture_request
 from quayline.engine.audit import audit
 from quayline.engine.ordering import order_findings, strategy_for
 from quayline.engine.recovery import estimate_for
 from quayline.engine.result import AuditResult
-from quayline.evidence.packet import render
+from quayline.evidence.capture import Capture, Register
+from quayline.evidence.packet import Claim, Packet, assemble, render
 from quayline.filing.dispute import dispute_for
+from quayline.filing.evidence import EvidenceRefusedError, items_for
 from quayline.ingest.bind import BindError, bind_ledger
 from quayline.ingest.pdftext import extract_text_layer
 from quayline.regulation.deadline import InvoiceIssued, dispute_request_deadline
@@ -91,6 +94,21 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--terminal", default="", help="terminal or gateway, where it matters")
     run.add_argument("--invoice-ref", default="", help="override the invoice reference")
     run.add_argument("--json", action="store_true", help="emit the full result as JSON")
+    run.add_argument(
+        "--evidence",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="an artifact to attach to the packet. Repeatable, and needs --kind, "
+        "--capturer and --affiliation",
+    )
+    run.add_argument(
+        "--kind",
+        choices=sorted(KINDS),
+        help="what the artifact is. Named rather than read off the filename",
+    )
+    run.add_argument("--capturer", default="", help="who took the artifact. Never defaulted")
+    run.add_argument("--affiliation", default="", help="what ties the capturer to the record")
     run.add_argument(
         "--packet",
         action="store_true",
@@ -201,6 +219,7 @@ def _human(result: AuditResult, invoice_date: Any) -> str:
 class _Run:
     result: AuditResult
     invoice_date: Any
+    evidence: tuple[Capture, ...] = ()
 
 
 def _audit_one(args: argparse.Namespace) -> _Run:
@@ -210,7 +229,35 @@ def _audit_one(args: argparse.Namespace) -> _Run:
     data = args.path.read_bytes()
     result = audit(data, args.carrier, args.terminal, invoice_ref=args.invoice_ref)
     bound = bind_ledger(extract_text_layer(data))
-    return _Run(result=result, invoice_date=bound.invoice_date)
+    return _Run(
+        result=result,
+        invoice_date=bound.invoice_date,
+        evidence=capture_request(args),
+    )
+
+
+def _packet_claims(packet: Packet) -> tuple[Claim, ...]:
+    """The claims a packet holds, so it can be re-assembled with evidence."""
+    return tuple(section.claim for section in packet.sections)
+
+
+def _with_evidence(packet: Packet, run: _Run) -> Packet:
+    """Attach whatever the operator supplied, re-assembling the packet.
+
+    Re-assembled rather than mutated, because a packet edited after assembly is a
+    packet nobody reviewed.
+    """
+    if not run.evidence:
+        return packet
+    contested = tuple(section.claim for section in packet.sections if section.claim.needs_evidence)
+    if not contested:
+        return packet
+    items = items_for(
+        contested,
+        Register(captures=run.evidence),
+        as_of=run.invoice_date,
+    )
+    return assemble(_packet_claims(packet), items)
 
 
 def main(argv: list[str] | None = None, stream: TextIO | None = None) -> int:
@@ -237,7 +284,14 @@ def main(argv: list[str] | None = None, stream: TextIO | None = None) -> int:
 
     try:
         run = _audit_one(args)
-    except (EngineError, BindError, KeyError, ValueError) as exc:
+    except (
+        EngineError,
+        EvidenceArgsError,
+        BindError,
+        EvidenceRefusedError,
+        KeyError,
+        ValueError,
+    ) as exc:
         if args.json:
             json.dump({"error": str(exc)}, out, indent=2)
             out.write("\n")
@@ -251,7 +305,21 @@ def main(argv: list[str] | None = None, stream: TextIO | None = None) -> int:
         json.dump(_as_json(result), out, indent=2)
         out.write("\n")
     elif args.packet:
-        packet = dispute_for(result)
+        try:
+            packet = _with_evidence(dispute_for(result), run)
+        except (
+            EngineError,
+            EvidenceArgsError,
+            EvidenceRefusedError,
+            BindError,
+            ValueError,
+        ) as exc:
+            if args.json:
+                json.dump({"error": str(exc)}, out, indent=2)
+                out.write("\n")
+            else:
+                out.write(f"Could not assemble that packet.\n{exc}\n")
+            return EXIT_ENGINE_ERROR
         out.write(render(packet))
         verdict = "can be filed" if packet.can_file else "cannot be filed"
         out.write(f"\nThis packet {verdict} as it stands.\n")

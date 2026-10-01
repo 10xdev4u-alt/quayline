@@ -165,6 +165,12 @@ def audit(
                     f"{contradiction.contradiction_days} chargeable day(s) fall "
                     f"before the container was available."
                 ),
+                # Deliberately not DISCLOSURE_OMITTED. Both dates were disclosed, so
+                # nothing is missing and 541.5 does not fire. The finding is that the
+                # carrier contradicted itself, which is a factual dispute and needs
+                # the evidence of when the box was actually available. Filing it as
+                # automatic would demand nothing and prove nothing.
+                grounds=(Ground.APPOINTMENT_UNAVAILABLE,),
                 days=contradiction.disputed_days,
             )
         )
