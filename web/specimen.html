@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quayline specimen: one invoice audited end to end</title>
+<style>
+:root { --ink:#1a1a1a; --muted:#5c5c5c; --rule:#d8d8d8; --bg:#fbfbf9;
+  --good:#1f6b3b; --gap:#8a5a00; --none:#6b6b6b; }
+* { box-sizing:border-box; }
+body { margin:0; padding:3rem 1.5rem; overflow-x:hidden; background:var(--bg); color:var(--ink);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+main { max-width:60rem; margin:0 auto; }
+h1 { font-size:2rem; line-height:1.2; margin:0 0 .5rem; letter-spacing:-.02em; }
+h2 { font-size:1.15rem; margin:2.75rem 0 .75rem; letter-spacing:-.01em; }
+p { margin:0 0 1rem; max-width:44rem; }
+.lede { font-size:1.05rem; color:var(--muted); }
+.cite { font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted);
+  white-space:nowrap; }
+/* A four column disclosure table cannot fit a 390px phone without either shrinking
+   the text past reading or panning the whole page. The table gets its own scroll
+   container so the page itself never moves sideways, which also keeps a phone reader
+   from losing its place in the document. */
+.tw { overflow-x:auto; margin:1rem 0; -webkit-overflow-scrolling:touch; }
+table { width:100%; border-collapse:collapse; margin:0; font-size:.94rem; }
+.tw table { min-width:34rem; }
+th { text-align:left; font-size:.78rem; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--muted); border-bottom:1px solid var(--rule);
+  padding:.5rem .6rem; }
+td { padding:.55rem .6rem; border-bottom:1px solid var(--rule); vertical-align:top; }
+td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+tr.emph td { border-top:2px solid var(--ink); font-weight:600; }
+tr.emph td + td { border-bottom:none; }
+.tag { font-size:.75rem; padding:.1rem .45rem; border-radius:.2rem; white-space:nowrap; }
+.v-verified { color:var(--good); background:#e8f2ea; }
+.v-absent { color:var(--gap); background:#fdf3e2; }
+.v-unchecked { color:var(--none); background:#eeeeee; }
+.callout { border-left:3px solid var(--ink); padding:.75rem 1rem; background:#fff;
+  margin:1.5rem 0; }
+.callout p:last-child { margin-bottom:0; }
+code { font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+  background:#eee; padding:.1rem .3rem; border-radius:.2rem; }
+footer { margin-top:3.5rem; padding-top:1.25rem; border-top:1px solid var(--rule);
+  font-size:.85rem; color:var(--muted); }
+footer p { max-width:none; }
+ul { margin:.5rem 0 1rem; padding-left:1.2rem; }
+li { margin:.3rem 0; }
+@media (prefers-color-scheme: dark) {
+  :root { --ink:#e8e8e6; --muted:#9a9a97; --rule:#333; --bg:#16161a;
+    --good:#7fd0a0; --gap:#e0b060; --none:#999; }
+  .v-verified { background:#123024; } .v-absent { background:#3a2c10; }
+  .v-unchecked { background:#242424; }
+  .callout { background:#1c1c20; } code { background:#26262a; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>One invoice, audited end to end</h1>
+  <p class="lede">
+    Quayline recomputes a demurrage and detention charge from the carrier's own
+    disclosures, because 46 CFR Part 541 requires the carrier to publish the rate
+    rule, the rate, the free time allowance, both endpoints and the dates charged.
+    This page shows one document going through that process, with every figure
+    traceable to the code that produced it.
+  </p>
+
+  <div class="callout">
+    <p>
+      <strong>This is a test fixture, not a real invoice.</strong>
+      <code>tests/fixtures/born_digital_invoice.pdf</code> is a hand-built PDF written to exercise
+      the parser. It states a real carrier's rate rule and it is priced against a
+      tariff transcribed from that carrier's own published schedule, but it is not a
+      customer's document and no money has been recovered from anyone.
+    </p>
+  </div>
+
+  <h2>The document</h2>
+  <div class="tw"><table>
+    <tr><td>Carrier</td><td>Maersk</td></tr>
+    <tr><td>Terminal</td><td>newark</td></tr>
+    <tr><td>Container</td><td>MAEU1234567</td></tr>
+    <tr><td>Free time expires, recomputed</td><td>2026-07-08</td></tr>
+  </table></div>
+
+  <h2>Recomputation</h2>
+  <p>
+    The rate comes from <code>Maersk US Newark Dry</code>, transcribed from
+    Maersk US import demurrage tariff, calendar-day charging from 2024-08-08, transcribed in docs/research/002-carriers.md (research date 2026-09-27), effective 2024-08-08.
+  </p>
+  <div class="tw"><table>
+    <tr><th>Line</th><th style="text-align:right">Amount</th></tr>
+      <tr><td>Chargeable days, recomputed from the disclosures</td><td class="num">2</td></tr>
+      <tr><td>Rate the carrier stated on the invoice</td><td class="num">390.00</td></tr>
+      <tr><td>Recomputed charge, from the transcribed tariff</td><td class="num">780.00</td></tr>
+      <tr><td>Total the carrier demanded, under 541.6(c)(1)</td><td class="num">1170.00</td></tr>
+      <tr class="emph"><td>Recomputed total</td><td class="num">780.00</td></tr>
+      <tr class="emph"><td>Variance</td><td class="num">390.00</td></tr>
+  </table></div>
+  <p>
+    Two chargeable days, because Maersk's working day basis runs Monday to Saturday
+    and seven working days from 2026-06-30 land on 2026-07-08. The invoice charges
+    three. That difference is the whole finding, and it is arithmetic rather than
+    argument: the carrier disclosed every input needed to reach it.
+  </p>
+
+  <h2>Findings</h2>
+  <ul>
+      <li><span class="cite">541.6(b)(4), 541.6(b)(5), 541.6(b)(8)</span> <strong>daycount_variance_diagnostic</strong><br>541.6(b)(8) were charged although the stated allowance under 541.6(b)(3) exhausted on 2026-07-08 1 day(s):</li>
+      <li><span class="cite">541.6(b)(4), 541.6(b)(5), 541.6(b)(8)</span> <strong>daycount_variance_diagnostic</strong><br>541.6(b)(5), 46 CFR 541.6(a) states the free time end as 2026-07-07, which its own start under 541.6(b)(4) and allowance under 541.6(b)(3) do not support.</li>
+      <li><span class="cite">541.6(c)(1)</span> <strong>amount_variance</strong><br>541.6(c)(2) and 541.6(c)(3) resolve to Maersk US Newark Dry, under which 2 chargeable day(s) from the start of the stay come to $780.00. The demand of $1170.00 under 541.6(c)(1) exceeds that by $390.00 (50.00%), outside the 2% tolerance band.</li>
+  </ul>
+
+  <h2>Required disclosures</h2>
+  <p>
+    19 clauses of 541.6 apply to an import invoice.
+    <strong>8</strong> are verified against this document,
+    <strong>8</strong> are not checked by any code we hold and
+    are listed as such rather than shown as satisfied. A field we did not read is not
+    a field we can say anything about.
+  </p>
+  <div class="tw"><table>
+    <tr><th>Clause</th><th>Disclosure</th><th>On this document</th><th>State</th></tr>
+      <tr><td class="cite">541.6(a)(1)</td><td>Identifying information</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-absent">absent</span></td></tr>
+      <tr><td class="cite">541.6(a)(2)</td><td>Identifying information</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-absent">absent</span></td></tr>
+      <tr><td class="cite">541.6(a)(3)</td><td>Identifying information</td><td>2026-07-20</td><td><span class="tag v-verified">verified</span></td></tr>
+      <tr><td class="cite">541.6(a)(4)</td><td>Identifying information</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-unchecked">not checked</span></td></tr>
+      <tr><td class="cite">541.6(b)(1)</td><td>Timing information</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-unchecked">not checked</span></td></tr>
+      <tr><td class="cite">541.6(b)(2)</td><td>Timing information</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-unchecked">not checked</span></td></tr>
+      <tr><td class="cite">541.6(b)(3)</td><td>Timing information</td><td>7</td><td><span class="tag v-verified">verified</span></td></tr>
+      <tr><td class="cite">541.6(b)(4)</td><td>Timing information</td><td>2026-06-30</td><td><span class="tag v-verified">verified</span></td></tr>
+      <tr><td class="cite">541.6(b)(5)</td><td>Timing information</td><td>2026-07-07</td><td><span class="tag v-verified">verified</span></td></tr>
+      <tr><td class="cite">541.6(b)(6)</td><td>Timing information</td><td>2026-06-30</td><td><span class="tag v-verified">verified</span></td></tr>
+      <tr><td class="cite">541.6(b)(8)</td><td>Timing information</td><td>2026-07-08, 2026-07-09, 2026-07-10</td><td><span class="tag v-verified">verified</span></td></tr>
+      <tr><td class="cite">541.6(c)(1)</td><td>Rate information</td><td>1170.00</td><td><span class="tag v-verified">verified</span></td></tr>
+      <tr><td class="cite">541.6(c)(2)</td><td>Rate information</td><td>Maersk US Newark Dry</td><td><span class="tag v-verified">verified</span></td></tr>
+      <tr><td class="cite">541.6(c)(3)</td><td>Rate information</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-absent">absent</span></td></tr>
+      <tr><td class="cite">541.6(d)(1)</td><td>Dispute information</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-unchecked">not checked</span></td></tr>
+      <tr><td class="cite">541.6(d)(2)</td><td>Dispute information</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-unchecked">not checked</span></td></tr>
+      <tr><td class="cite">541.6(d)(3)</td><td>Dispute information</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-unchecked">not checked</span></td></tr>
+      <tr><td class="cite">541.6(e)(1)</td><td>Certifications</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-unchecked">not checked</span></td></tr>
+      <tr><td class="cite">541.6(e)(2)</td><td>Certifications</td><td><span class=v-unchecked>not stated</span></td><td><span class="tag v-unchecked">not checked</span></td></tr>
+  </table></div>
+
+  <h2>Where the claims come from</h2>
+  <ul>
+      <li><code>docs/research/001-regulation.md</code> The carrier must name the rule it billed under, so a charge is recomputable.</li>
+      <li><code>docs/research/001-regulation.md</code> Free time, its endpoints and the days charged are all disclosed, so the day count is arithmetic rather than argument.</li>
+      <li><code>docs/research/001-regulation.md</code> An omission of a required disclosure is automatic: no cure period, no showing of prejudice.</li>
+      <li><code>docs/research/002-carriers.md</code> Maersk charges on a Monday to Saturday working day basis, so free time expires on the eighth here.</li>
+      <li><code>docs/research/002-carriers.md</code> The Newark dry schedule prices days five to eight at 390.00.</li>
+  </ul>
+
+  <h2>Coverage today</h2>
+  <p>
+    One carrier has transcribed rates. The rest have clock rules, closure policies or
+    availability regimes but no rate table we hold, and one of them passes terminal
+    demurrage through at cost with no published tariff at eight of the nine major
+    gateways. We print that because a shipper is entitled to know it before buying.
+  </p>
+  <div class="tw"><table>
+    <tr><th>Carrier</th><th>State</th><th style="text-align:right">Rules held</th><th>Verified</th></tr>
+      <tr><td>COSCO</td><td>not held</td><td class="num">0</td><td>no</td></tr>
+      <tr><td>Evergreen</td><td>not held</td><td class="num">0</td><td>no</td></tr>
+      <tr><td>HMM</td><td>not held</td><td class="num">0</td><td>no</td></tr>
+      <tr><td>Hapag-Lloyd</td><td>not held</td><td class="num">0</td><td>no</td></tr>
+      <tr><td>MSC</td><td>not held</td><td class="num">0</td><td>no</td></tr>
+      <tr><td>Maersk</td><td>held, with limits</td><td class="num">8</td><td>yes</td></tr>
+      <tr><td>ONE</td><td>not held</td><td class="num">0</td><td>no</td></tr>
+      <tr><td>PIL</td><td>not held</td><td class="num">0</td><td>no</td></tr>
+      <tr><td>Yang Ming</td><td>not held</td><td class="num">0</td><td>no</td></tr>
+  </table></div>
+
+  <footer>
+    <p>
+      Generated by <code>make specimen</code>. Nothing on this page is typed: every
+      figure is interpolated from an <code>AuditResult</code> produced by running the
+      engine over the fixture, and a test fails if the two disagree.
+    </p>
+    <p>
+      Run <code>quayline coverage</code> for the same coverage table, and read
+      <code>AGENTS.md</code> before changing anything here.
+    </p>
+  </footer>
+</main>
+</body>
+</html>
