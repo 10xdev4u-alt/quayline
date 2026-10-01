@@ -9,6 +9,9 @@ description = "Invoice-self-auditing engine for U.S. ocean demurrage and detenti
 requires-python = ">=3.12"
 dependencies = []
 
+[project.scripts]
+quayline = "quayline.cli.audit_cmd:main"
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.0",
