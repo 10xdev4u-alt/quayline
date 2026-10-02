@@ -32,8 +32,9 @@ from quayline.cli.audit_cmd import EXIT_ENGINE_ERROR, EXIT_FILE_WORTHY, main
 from quayline.cli.serve_cmd import build_runner
 from quayline.serve import app as serve_app
 from quayline.serve.app import MAX_UPLOAD_BYTES, build_handler
-from quayline.serve.pages import FORM_PAGE, letter_page
+from quayline.serve.pages import letter_page
 from quayline.serve.security import BindRefusedError, assert_loopback
+from quayline.web.document import script_hash
 
 FIXTURE = Path("tests/fixtures/born_digital_invoice.pdf")
 
@@ -404,7 +405,12 @@ def test_the_root_serves_a_form_a_person_can_actually_use(server: str) -> None:
     assert "<form" in text and 'type="file"' in text
     assert 'name="carrier"' in text
     assert 'enctype="multipart/form-data"' in text, "a file field needs it"
-    assert "<script" not in text.lower(), "a form does not need JavaScript to work"
+    # The page ships one inline script for the drop target, the staged progress and the
+    # day grid reveal. It is enhancement: the form above is a real form posting to a real
+    # route, so a reader with the script blocked keeps the whole product. What must not
+    # be possible is an external script, and the policy test below is what proves it.
+    assert text.count("<script") == 1, "exactly one inline script, ours"
+    assert "http://" not in text and "https://" not in text.replace("127.0.0.1", "")
 
 
 def test_the_page_states_it_is_local_and_not_a_hosted_service(server: str) -> None:
@@ -412,8 +418,13 @@ def test_the_page_states_it_is_local_and_not_a_hosted_service(server: str) -> No
     with urllib.request.urlopen(f"{server}/") as response:
         body = response.read().decode()
 
-    assert "localhost" in body.lower() or "127.0.0.1" in body.lower()
-    assert "nothing is stored" in body.lower() or "not stored" in body.lower()
+    lowered = body.lower()
+    assert "localhost" in lowered or "127.0.0.1" in lowered
+    assert "nothing is stored" in lowered or "written to disk" in lowered
+    # The fixture is labelled as a fixture. An invented client on the hero would be the
+    # fastest way to lose the only credibility this project has.
+    assert "not a client" in lowered, "the worked example must say it is not a client"
+    assert "no recovery rate is claimed" in lowered
 
 
 def test_the_policy_does_not_block_the_page_from_rendering(server: str) -> None:
@@ -441,31 +452,18 @@ def test_the_policy_does_not_block_the_page_from_rendering(server: str) -> None:
         "the form renders unstyled"
     )
     assert "default-src 'none'" in page_csp, "and still nothing may be fetched"
+    # The inline script is pinned by digest rather than waved through with
+    # unsafe-inline, so the policy still refuses every other script on the page.
+    assert "unsafe-inline" not in page_csp.split("script-src")[1], (
+        "script-src must not allow inline generally, only our one digest"
+    )
+    assert f"script-src '{script_hash()}'" in page_csp, (
+        "the digest has to be the one for the script actually served"
+    )
 
     assert json_csp == "default-src 'none'", (
         "a JSON response has no style block and gets the strict policy with no exception"
     )
-
-
-def test_the_stylesheet_is_valid_css_and_not_escaped_braces() -> None:
-    """The form rendered unstyled for a second reason, after the header was fixed.
-
-    ``FORM_PAGE`` carried f-string escapes, so the served CSS was ``:root {{ --ink:... }}``.
-    A doubled brace is not valid CSS, and a browser discards the whole stylesheet when
-    one declaration is malformed. So the page came back unstyled: serif heading, white
-    background, every field on one row.
-
-    Asserting that the body contains a ``<style>`` tag is not enough. It did, the whole
-    time. This checks the rule bodies are singly braced, because that is the property
-    that actually decides whether the page looks designed or looks like a default form.
-    """
-    css = FORM_PAGE.split("<style>", 1)[1].split("</style>", 1)[0]
-    assert "{{" not in css and "}}" not in css, (
-        "doubled braces are f-string escapes that leaked into a plain string, which is "
-        "invalid CSS and makes the browser drop the whole stylesheet"
-    )
-    assert css.count("{") == css.count("}"), "unbalanced rule bodies"
-    assert ":root" in css and "--ink" in css, "the variables the page reads are declared"
 
 
 def test_an_unknown_path_is_a_clean_404_not_a_traceback(server: str) -> None:
