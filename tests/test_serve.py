@@ -30,8 +30,9 @@ import pytest
 
 from quayline.cli.audit_cmd import EXIT_ENGINE_ERROR, EXIT_FILE_WORTHY, main
 from quayline.cli.serve_cmd import build_runner
+from quayline.serve import app as serve_app
 from quayline.serve.app import MAX_UPLOAD_BYTES, build_handler
-from quayline.serve.pages import FORM_PAGE
+from quayline.serve.pages import FORM_PAGE, letter_page
 from quayline.serve.security import BindRefusedError, assert_loopback
 
 FIXTURE = Path("tests/fixtures/born_digital_invoice.pdf")
@@ -97,8 +98,8 @@ def test_it_refuses_any_bind_that_is_not_loopback() -> None:
 
 def test_loopback_is_accepted_in_every_form_it_takes() -> None:
     """IPv4 and IPv6 loopback, and the two spellings of the v4 one."""
-    for host in ("127.0.0.1", "localhost", "::1", "127.0.1.1"):
-        assert ipaddress.ip_address(assert_loopback(host))
+    for host in ("127.0.0.1", "localhost", "127.0.1.1", "LOCALHOST"):
+        assert ipaddress.ip_address(assert_loopback(host)).version == 4
 
 
 def test_a_name_binds_as_a_literal_so_the_check_and_the_bind_cannot_disagree() -> None:
@@ -109,7 +110,7 @@ def test_a_name_binds_as_a_literal_so_the_check_and_the_bind_cannot_disagree() -
     and the server answers on the network, which is the one outcome this module exists
     to prevent. So the name is resolved here and the literal is what comes back.
     """
-    for host in ("localhost", "127.0.0.1", "::1", "127.0.1.1"):
+    for host in ("localhost", "localhost.localdomain", "127.0.0.1"):
         bound = assert_loopback(host)
         assert ipaddress.ip_address(bound), f"{host!r} bound as a name, not an address"
 
@@ -160,6 +161,73 @@ def test_a_resolved_name_binds_on_a_real_socket() -> None:
             assert httpd.server_address[0] == address
         finally:
             httpd.server_close()
+
+
+def test_an_ipv6_literal_is_refused_rather_than_failing_the_bind() -> None:
+    """``::1`` is loopback, but this server cannot bind it.
+
+    ``HTTPServer`` is an ``AF_INET`` socket, so accepting ``::1`` passes the security
+    check and then dies with ``Address family for hostname not supported``. That reads
+    as a security module declining to serve rather than a socket disagreeing with a
+    check, and it is a worse error than the one we can give up front.
+    """
+    with pytest.raises(BindRefusedError) as caught:
+        assert_loopback("::1")
+    assert "AF_INET" in str(caught.value), "the message should say why"
+
+
+def test_a_body_that_stops_short_is_refused_not_audited(
+    server: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A truncated upload has no honest answer, so it is refused.
+
+    ``HTTPServer`` serves one connection at a time, so an unguarded read of a declared
+    length is also a denial of service: declare a size, send nothing, hold the server.
+    The timeout is cut to a second here rather than the thirty seconds production uses,
+    because the behaviour under test is the refusal and not how long a person waits.
+    """
+    monkeypatch.setattr(serve_app, "_BODY_TIMEOUT", 1.0)
+    boundary = f"----q{uuid4().hex}"
+    body = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="carrier"\r\n\r\nMaersk\r\n'.encode()
+        + f"--{boundary}--\r\n".encode()
+    )
+    request = urllib.request.Request(
+        f"{server}/audit",
+        data=body,
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(body) + 4096),
+        },
+    )
+    try:
+        urllib.request.urlopen(request, timeout=20)
+    except urllib.error.HTTPError as exc:
+        payload = json.loads(exc.read())
+        assert "ended" in payload["error"] or "declared" in payload["error"], payload
+        assert payload["exit_code"] == EXIT_ENGINE_ERROR
+    else:
+        raise AssertionError("a short body was accepted as a complete upload")
+
+
+def test_an_invoice_cannot_inject_markup_into_the_letter_page() -> None:
+    """The packet text is invoice-derived, so it is untrusted input.
+
+    The letter page escapes the packet and splices in the strip as real markup. The
+    escape has to be the last thing that happens to the text, otherwise angle brackets
+    from an invoice come out as tags. This pins that ordering, because an earlier
+    version un-escaped entities after escaping them and looked injectable.
+    """
+    hostile = (
+        "Dear carrier, you charged inside free time.\n"
+        '<div class="strip">\n<table><tr><td>2026-07-06</td></tr></table>\n</div>\n'
+        "<script>alert(1)</script><img src=x onerror=alert(2)>"
+    )
+    page = letter_page(hostile, EXIT_FILE_WORTHY)
+    assert "<script>alert(1)</script>" not in page
+    assert "<img src=x onerror=alert(2)>" not in page
+    assert "&lt;script&gt;" in page, "it should be present as text, not dropped"
+    assert '<div class="strip">' in page, "and the strip is still real markup"
 
 
 def test_a_refused_bind_names_the_host_it_refused() -> None:

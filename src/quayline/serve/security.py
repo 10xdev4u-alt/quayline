@@ -76,13 +76,19 @@ def _system_resolver(name: str) -> list[str]:
 
 
 def _bind_literal(host: str) -> str:
-    """Return ``host`` if it is already a loopback literal."""
+    """Return ``host`` if it is a loopback literal this socket can actually bind."""
     address = ipaddress.ip_address(host)
     if not address.is_loopback:
         raise BindRefusedError(
             f"refusing to bind {host!r}: {address} is routable. This intake holds a "
             f"client's container number and a disputed amount and has no "
             f"authentication, so it serves on loopback only."
+        )
+    if address.version != IPV4:
+        raise BindRefusedError(
+            f"refusing to bind {host!r}: {address} is loopback, but this server is an "
+            f"AF_INET socket and cannot bind an IPv6 address. Pass 127.0.0.1, or a "
+            f"loopback name, which resolves to IPv4."
         )
     return host
 
@@ -119,22 +125,34 @@ def assert_loopback(host: str, resolver: Resolver | None = None) -> str:
             f"refusing to bind {host!r}: it resolved to no address at all. An unbound "
             f"name cannot be shown to be loopback."
         )
+
+    # Two separate questions. Routable is a security failure and refuses. IPv6 loopback
+    # is not, because ``localhost`` legitimately resolves to both 127.0.0.1 and ::1 on
+    # most machines and an AF_INET socket can only take the first kind.
+    bindable: list[str] = []
     for address in resolved:
         try:
-            _bind_literal(address)
+            parsed = ipaddress.ip_address(address)
         except ValueError as exc:
             raise BindRefusedError(
-                f"refusing to bind {host!r}: it resolved to {address}, which is not "
-                f"an address this tool will bind."
+                f"refusing to bind {host!r}: it resolved to {address!r}, which is not "
+                f"an address at all."
             ) from exc
-        except BindRefusedError as exc:
+        if not parsed.is_loopback:
             raise BindRefusedError(
-                f"refusing to bind {host!r}: it resolved to {address}, which is "
+                f"refusing to bind {host!r}: it resolved to {parsed}, which is "
                 f"routable. This intake holds a client's container number and a "
                 f"disputed amount and has no authentication, so it serves on loopback "
                 f"only."
-            ) from exc
-    return resolved[0]
+            )
+        if parsed.version == IPV4:
+            bindable.append(address)
+    if not bindable:
+        raise BindRefusedError(
+            f"refusing to bind {host!r}: it resolved to {', '.join(resolved)}, none of "
+            f"which is an IPv4 address this AF_INET server can bind. Pass 127.0.0.1."
+        )
+    return bindable[0]
 
 
 __all__ = ["BindRefusedError", "Resolver", "assert_loopback"]

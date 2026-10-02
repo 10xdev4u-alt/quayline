@@ -137,13 +137,14 @@ def letter_page(packet_text: str, code: int) -> str:
         else "the engine could not answer"
     )
     # The strip is real markup and must not be escaped, so the text and the strip are
-    # separated rather than escaped as one blob.
+    # separated rather than escaped as one blob. The packet text around it is escaped
+    # with ``_esc`` and nothing relaxes that afterwards: the escape happens last, so
+    # an invoice containing angle brackets comes out as text and not as tags.
     marker = '<div class="strip">'
     head, _, tail = packet_text.partition(marker)
     if tail:
         strip_html, _, rest = (marker + tail).partition("</div>\n")
         strip_html += "</div>"
-        rest = rest.replace("&lt;", "<").replace("&gt;", ">")
         body = _esc(head) + strip_html + _esc(rest)
     else:
         body = _esc(packet_text)

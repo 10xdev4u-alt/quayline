@@ -50,6 +50,13 @@ _DRAIN_CAP = 256 * 1024
 #: Seconds to wait for the rest of an oversize body before giving up on it.
 _DRAIN_TIMEOUT = 1.0
 
+#: Seconds a whole upload may stall. Longer than the drain timeout because this is the
+#: body we actually want, and a slow connection on a laptop is not an attack.
+_BODY_TIMEOUT = 30.0
+
+#: Bytes per read, so one stalled read cannot sit on a large declared length.
+_BODY_CHUNK = 64 * 1024
+
 
 def _http_status(exit_code: int) -> int:
     """The CLI exit contract mapped onto HTTP.
@@ -240,7 +247,44 @@ def build_handler(run_audit: AuditRunner) -> type[BaseHTTPRequestHandler]:
             if "multipart/form-data" not in content_type:
                 self._json(*_error("send the file as multipart/form-data."))
                 return None
-            return self.rfile.read(length)
+            body = self._read_exactly(length)
+            if body is None:
+                self._json(
+                    *_error(
+                        f"the request declared {length} bytes and the connection ended "
+                        f"first. A partial upload is refused rather than audited, "
+                        f"because a truncated PDF has no honest answer."
+                    )
+                )
+                return None
+            return body
+
+        def _read_exactly(self, length: int) -> bytes | None:
+            """Read exactly ``length`` bytes, or ``None`` if the client stops early.
+
+            ``HTTPServer`` is a ``TCPServer``: one connection is served at a time. So an
+            unguarded ``rfile.read(length)`` is a denial of service, because a client
+            that declares a Content-Length and then sends nothing holds every other
+            request until it gives up. The timeout bounds that, and returning ``None``
+            for a short read stops a truncated body being audited as if it were whole.
+
+            The read is chunked rather than one call because a single ``read`` on a
+            socket file object can return fewer bytes than asked for without meaning
+            end of file.
+            """
+            self.connection.settimeout(_BODY_TIMEOUT)
+            chunks: list[bytes] = []
+            remaining = length
+            try:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(remaining, _BODY_CHUNK))
+                    if not chunk:
+                        return None
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+            except (TimeoutError, OSError):
+                return None
+            return b"".join(chunks)
 
         def _read_upload(self) -> tuple[bytes, dict[str, str]] | None:
             """The PDF and the fields, or ``None`` having already answered.
