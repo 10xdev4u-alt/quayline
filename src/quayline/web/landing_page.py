@@ -138,7 +138,7 @@ def landing_page() -> str:
         f"{rail(rail_pairs)}\n"
         f"{day_cells(strip.days, days_with_findings(result.day_count))}\n"
         f"{legend()}\n"
-        f"{reasoning_panel(result.day_count)}\n"
+        f"{reasoning_panel(result.day_count, result)}\n"
         f"{ledger(money(result.demanded_total), money(result.recomputed_total), money(result.variance))}\n"
         "</div>\n"
         "<h2>Why the ninth day is the argument</h2>\n"

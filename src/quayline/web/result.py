@@ -306,7 +306,7 @@ def result_page(findings: Findings) -> str:
         f"{rail(_rail_pairs(findings))}\n"
         f"{day_cells(findings.strip.days if findings.strip else [], flagged)}\n"
         f"{legend()}\n"
-        f"{reasoning_panel(findings.result.day_count)}\n"
+        f"{reasoning_panel(findings.result.day_count, findings.result)}\n"
         f"{_ledger(findings, disputed_label)}\n"
         f"{''.join(ground_section(s) for s in findings.packet.sections)}\n"
         '<div class="next">'

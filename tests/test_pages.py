@@ -29,6 +29,7 @@ from quayline.cli.audit_render import resolve_disclosed
 from quayline.engine.daycount import Direction
 from quayline.serve.audit_runner import Findings, find_runner
 from quayline.serve.landing import landing_document
+from quayline.web import reasoning
 from quayline.web import result as result_module
 from quayline.web.design import stylesheet
 from quayline.web.example import FIXTURE
@@ -36,8 +37,10 @@ from quayline.web.landing_page import landing_page
 from quayline.web.reasoning import (
     DIRECTION_WORD,
     UNKNOWN_DIRECTION,
+    attribution,
     days_with_findings,
     direction_word,
+    money_note,
     reasoning_panel,
 )
 from quayline.web.render import generate
@@ -418,3 +421,91 @@ def test_the_direction_wording_does_not_assert_a_mechanism() -> None:
                 f"engine does not always report"
             )
     assert DIRECTION_WORD["overbilled"] == "the carrier billed a day that was not chargeable"
+
+
+def test_the_money_attribution_reads_the_engine_and_not_a_sentence() -> None:
+    """Which finding is worth money is ``basis_of``'s decision, not this page's.
+
+    ``Finding.detail`` contains the words "carries no money", and parsing that phrase
+    would create a second rule that drifts from the first. The page reads
+    ``basis_of(code)``, which is the same call ``engine.recovery`` makes to stop the same
+    dollars being priced twice, so the page and the recovery estimate cannot disagree.
+
+    The test reads the module source to prove it, because a wrong implementation here
+    would render the right words by accident.
+    """
+    source = Path(reasoning.__file__).read_text(encoding="utf-8")
+    assert "basis_of(" in source, "the page must ask the engine"
+    assert "carries no money" not in source, (
+        "and must not decide it by reading Finding.detail, which happens to contain that "
+        "phrase today and might not tomorrow"
+    )
+    body = source.split("def money_note")[1].split("\ndef ")[0]
+    for forbidden in ("item.detail", "finding.detail", ".detail)"):
+        assert forbidden not in body, (
+            f"money_note must not read {forbidden}; it asks basis_of instead"
+        )
+
+
+def test_each_row_says_whether_it_values_money() -> None:
+    """A row either says what it is worth or says nothing at all.
+
+    The empty case matters as much as the stated one: ``basis_of`` returning
+    ``PARTIAL`` is not a licence to print a figure the engine never computed.
+    """
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    day_count = findings.result.day_count
+    assert day_count is not None
+    notes = [money_note(item, findings.result) for item in day_count.discrepancies]
+    assert notes, "the fixture's rows are the ones worth checking"
+    assert all(n == "values no money on its own" for n in notes), (
+        f"both day-level findings are informational and the page should say so: {notes}"
+    )
+    # No finding on this invoice covers a whole line, so nothing should claim to.
+    assert "values the whole line" not in " ".join(notes)
+
+
+def test_the_disputed_figure_is_attributed_to_the_finding_that_carries_it() -> None:
+    """The panel and the ledger have to be readable together.
+
+    Both day-level rows are informational and the money is on a totals-level finding with
+    no days at all. Without the attribution a reader assumes a day row explains the
+    figure, and it does not.
+    """
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    where = attribution(findings.result)
+    assert "amount_variance" in where, f"the figure's source is not named: {where!r}"
+    assert "rather than a single day" in where
+
+    page = result_page(findings)
+    assert 'class="reason-where"' in page
+    assert "amount_variance" in page
+    # And the ledger's number and the panel are on the same page to be read together.
+    assert "390.00" in page
+
+
+def test_the_page_never_prints_an_amount_the_engine_did_not_compute() -> None:
+    """Every money-shaped string on the page has to come from the result or a claim.
+
+    The tempting bug is printing ``item.amount_at_stake`` on a ``Discrepancy``, which
+    does not have that field, or summing stakes that ``basis_of`` says are
+    informational. Neither is available here by construction; this is the guard.
+    """
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    page = result_page(findings)
+    amounts = set(re.findall(r"\$[\d,]+\.\d\d", page))
+    allowed = {
+        f"${value:,.2f}"
+        for value in (
+            findings.result.demanded_total,
+            findings.result.recomputed_total,
+            findings.result.variance,
+        )
+        if value is not None
+    }
+    for section in findings.packet.sections:
+        if section.claim.amount_at_stake is not None:
+            allowed.add(f"${section.claim.amount_at_stake:,.2f}")
+    assert amounts <= allowed, (
+        f"the page shows money the engine did not compute: {amounts - allowed}"
+    )

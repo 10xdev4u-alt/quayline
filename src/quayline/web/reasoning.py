@@ -40,6 +40,7 @@ from __future__ import annotations
 from typing import Any
 
 from quayline.engine.daycount import Discrepancy
+from quayline.engine.recovery import ClaimBasis, basis_of
 from quayline.web.intake import esc
 
 #: What each direction means to the person who receives the letter. Enum names are for
@@ -77,16 +78,82 @@ def _days(dates: Any) -> str:
     return ", ".join(value.isoformat() for value in values)
 
 
-def discrepancy_row(item: Discrepancy) -> str:
-    """One discrepancy: which days, what happened, and the clause that says so."""
+def discrepancy_row(item: Discrepancy, note: str = "") -> str:
+    """One discrepancy: which days, what happened, and the clause that says so.
+
+    ``note`` is what the engine says the row is worth. Empty when the engine has no
+    opinion, which is different from saying it is worth nothing.
+    """
+    worth = f'<span class="disc-worth">{esc(note)}</span>' if note else ""
     return (
         '<li class="disc">'
         f'<span class="disc-days data">{esc(_days(item.dates))}</span>'
         f'<span class="disc-what">{esc(direction_word(item.direction))}</span>'
         f'<span class="disc-detail">{esc(item.detail)}</span>'
         f'<span class="disc-cite data">{esc(item.citation)}</span>'
+        f"{worth}"
         "</li>"
     )
+
+
+def _findings_for(result: Any, dates: Any) -> list[Any]:
+    """The findings that touch any of these dates."""
+    wanted = {value for value in dates if value is not None}
+    return [f for f in result.findings if wanted & set(f.days)]
+
+
+def money_note(item: Discrepancy, result: Any) -> str:
+    """What this discrepancy is worth, in the engine's own terms.
+
+    Reads ``basis_of`` rather than deciding anything. That function is how
+    ``engine.recovery`` stops the same dollars being priced twice, so the page and the
+    recovery estimate cannot disagree about which finding is the diagnostic one.
+
+    The engine also states it in prose, at the head of ``Finding.detail`` for every
+    demoted finding. Reading that sentence instead would be a second rule living in a
+    different place from the first, and it would drift. A test asserts this module never
+    reaches for a detail string.
+
+    Returns the empty string when the engine has no opinion, because printing a guess
+    about money is the one failure this page cannot have.
+    """
+    found = _findings_for(result, item.dates)
+    if not found:
+        return ""
+    bases = {basis_of(finding.code) for finding in found}
+    if bases == {ClaimBasis.INFORMATIONAL}:
+        return "values no money on its own"
+    if ClaimBasis.LINE_WIDE in bases:
+        return "values the whole line"
+    return ""
+
+
+def attribution(result: Any) -> str:
+    """Where the disputed figure comes from, so the panel and the ledger connect.
+
+    The fixture's panel lists two day-level findings and its ledger shows one number,
+    and the two rows that carry the days are both informational: the money is on a
+    totals-level finding with no days at all. A reader who cannot see that will assume
+    one of the day rows explains the figure, and it does not.
+
+    So the figure is named, and the findings that value nothing are counted, from
+    ``basis_of`` rather than from anything said here.
+    """
+    valued = [f for f in result.findings if basis_of(f.code) is not ClaimBasis.INFORMATIONAL]
+    day_level = [f for f in valued if f.days]
+    totals_only = [f for f in valued if not f.days]
+    parts: list[str] = []
+    if totals_only:
+        parts.append(
+            "the disputed figure comes from "
+            + ", ".join(sorted(f.code for f in totals_only))
+            + ", which compares the totals rather than a single day"
+        )
+    if day_level:
+        parts.append(
+            "and " + ", ".join(sorted({f.code for f in day_level})) + " values days individually"
+        )
+    return ". ".join(parts) + "." if parts else ""
 
 
 def days_with_findings(day_count: Any) -> dict[str, list[Discrepancy]]:
@@ -107,7 +174,7 @@ def days_with_findings(day_count: Any) -> dict[str, list[Discrepancy]]:
     return found
 
 
-def reasoning_panel(day_count: Any) -> str:
+def reasoning_panel(day_count: Any, result: Any = None) -> str:
     """The engine's reasoning for the days that have some, and nothing for those that do not.
 
     Rendered empty, not omitted, when there is nothing. An absent panel and a panel
@@ -117,7 +184,16 @@ def reasoning_panel(day_count: Any) -> str:
     """
     if day_count is None or not day_count.discrepancies:
         return ""
-    rows = "".join(discrepancy_row(item) for item in day_count.discrepancies)
+    notes = (
+        {id(item): money_note(item, result) for item in day_count.discrepancies}
+        if result is not None
+        else {}
+    )
+    rows = "".join(
+        discrepancy_row(item, notes.get(id(item), "")) for item in day_count.discrepancies
+    )
+    where = attribution(result) if result is not None else ""
+    tail = f'<p class="reason-where">{esc(where)}</p>' if where else ""
     return (
         '<section class="reason">'
         '<h2 class="reason-h">Why the engine says this</h2>'
@@ -125,6 +201,7 @@ def reasoning_panel(day_count: Any) -> str:
         "of 46 CFR Part 541 it rests on. Nothing here is written by hand, and the "
         "citations are printed exactly as the engine supplies them.</p>"
         f'<ul class="discs">{rows}</ul>'
+        f"{tail}"
         "</section>"
     )
 
@@ -156,6 +233,12 @@ DISCREPANCY_CSS = """
    states it, which is also the only version a reader can check against the rule book.
    The part is named once in the panel lede instead. */
 .disc-cite { color: var(--slate); font-size: 0.8rem; }
+/* What the row is worth, and where the disputed figure comes from. Both are read from
+   basis_of, the same call engine.recovery makes, so the page and the recovery estimate
+   cannot disagree about which finding values nothing. */
+.disc-worth { color: var(--slate); font-size: 0.78rem; font-style: italic; }
+.reason-where { color: var(--slate); max-width: var(--measure); margin: var(--gap) 0 0;
+  border-left: 2px solid var(--edge); padding-left: 0.8rem; }
 
 /* A day that carries a discrepancy gets a marker in the grid. The marker is a shape and
    a border weight, not only a colour, so it survives a colour-blind reader. */

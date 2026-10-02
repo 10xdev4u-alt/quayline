@@ -71,10 +71,24 @@ class _DayCount:
     )
 
 
+class _Finding:
+    def __init__(self, code: str, days: tuple[object, ...] = ()) -> None:
+        self.code = code
+        self.days = days
+
+
+class _Result:
+    """A stub result carrying the day count and the findings the page reads them with."""
+
+    def __init__(self) -> None:
+        self.day_count = _DayCount()
+        self.findings = (_Finding("daycount_variance_diagnostic", (CELLS[1].day,)),)
+
+
 #: The stub pages carry the engine's reasoning, because the page needs it to explain the
 #: grid. A stub with no day count renders the grid and no argument, and a test built on
 #: one silently stopped covering that.
-DAYS_WITH_REASONING = _DayCount()
+STUB_RESULT = _Result()
 
 
 def test_no_other_module_writes_a_hex_value() -> None:
@@ -140,7 +154,7 @@ def test_the_served_script_is_byte_for_byte_the_hashed_script() -> None:
     """The header and the body are built from one constant, and this proves it."""
     page = intake_document(
         days=CELLS,
-        day_count=DAYS_WITH_REASONING,
+        result=STUB_RESULT,
         rail_pairs=[("carrier", "Maersk")],
         money=MONEY,
         fixture_note="fixture",
@@ -160,7 +174,7 @@ def test_the_page_still_works_with_no_script_at_all() -> None:
     """
     page = intake_document(
         days=CELLS,
-        day_count=DAYS_WITH_REASONING,
+        result=STUB_RESULT,
         rail_pairs=[("carrier", "Maersk")],
         money=MONEY,
         fixture_note="fixture",
@@ -210,7 +224,7 @@ def test_the_count_up_cannot_leave_a_wrong_number_on_screen() -> None:
     # the value is correct before any script runs, which is what makes the fallback safe
     assert "$390.00" in intake_document(
         days=CELLS,
-        day_count=DAYS_WITH_REASONING,
+        result=STUB_RESULT,
         rail_pairs=[("carrier", "Maersk")],
         money=MONEY,
         fixture_note="fixture",
@@ -228,7 +242,7 @@ def test_the_fixture_claim_is_never_stronger_than_the_fixture() -> None:
     """No invented customer, no invented recovery rate. Enforced on the rendered page."""
     page = intake_document(
         days=CELLS,
-        day_count=DAYS_WITH_REASONING,
+        result=STUB_RESULT,
         rail_pairs=[("carrier", "Maersk")],
         money=MONEY,
         fixture_note="The days above are the worked example on this site.",
