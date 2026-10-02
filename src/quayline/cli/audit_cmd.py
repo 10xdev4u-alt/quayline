@@ -39,16 +39,29 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass
-from decimal import Decimal
 from pathlib import Path
 from typing import Any, TextIO
 
+from quayline.cli.audit_render import (
+    as_human as _human,
+)
+from quayline.cli.audit_render import (
+    as_json as _as_json,
+)
+from quayline.cli.audit_render import (
+    resolve_disclosed,
+)
 from quayline.cli.coverage_cmd import add_parser as add_coverage_parser
 from quayline.cli.coverage_cmd import run_coverage
 from quayline.cli.evidence_args import KINDS, EvidenceArgsError, capture_request
+from quayline.cli.exit_codes import (
+    EXIT_CLEAN,
+    EXIT_ENGINE_ERROR,
+    EXIT_FILE_WORTHY,
+)
+from quayline.cli.serve_cmd import add_parser as add_serve_parser
+from quayline.cli.serve_cmd import serve_intake
 from quayline.engine.audit import audit
-from quayline.engine.ordering import order_findings, strategy_for
-from quayline.engine.recovery import estimate_for
 from quayline.engine.result import AuditResult
 from quayline.evidence.capture import Capture, Register
 from quayline.evidence.packet import Claim, Packet, assemble, render
@@ -56,16 +69,10 @@ from quayline.filing.dispute import dispute_for
 from quayline.filing.evidence import EvidenceRefusedError, items_for
 from quayline.ingest.bind import BindError, bind_ledger
 from quayline.ingest.pdftext import extract_text_layer
-from quayline.regulation.deadline import InvoiceIssued, dispute_request_deadline
-from quayline.tariffs.corpus import FixtureError, load_corpus
-from quayline.tariffs.resolution import RateQuery, Resolution, resolve
 
-#: Nothing worth filing.
-EXIT_CLEAN = 0
-#: Filing worthy findings.
-EXIT_FILE_WORTHY = 1
-#: The engine could not answer. Our failure, not the carrier's.
-EXIT_ENGINE_ERROR = 2
+#: Re-exported from ``cli.exit_codes`` so the existing importers of this module keep
+#: working. The intake cannot import this module, so the shared numbers had to move
+#: somewhere both sides can reach without pointing back.
 
 
 class EngineError(RuntimeError):
@@ -120,101 +127,9 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     add_coverage_parser(sub)
+
+    add_serve_parser(sub)
     return parser
-
-
-def _money(value: Decimal | None) -> str | None:
-    """A ``Decimal`` as a string, or ``None``.
-
-    String, not float. A ``Decimal`` through a JSON encoder becomes a float, and
-    binary floating point cannot hold every cent, so a demand letter would carry a
-    number nobody quoted.
-    """
-    return None if value is None else str(value)
-
-
-def _date(value: Any) -> str | None:
-    return None if value is None else value.isoformat()
-
-
-def _as_json(result: AuditResult) -> dict[str, Any]:
-    return {
-        "carrier": result.carrier,
-        "terminal": result.terminal,
-        "invoice_ref": result.invoice_ref,
-        "demanded_total": _money(result.demanded_total),
-        "recomputed_total": _money(result.recomputed_total),
-        "variance": _money(result.variance),
-        "variance_pct": _money(result.variance_pct),
-        "computed_free_time_expiry": _date(result.computed_free_time_expiry),
-        "computed_charge_days": result.computed_charge_days,
-        "can_file": result.can_file,
-        "warnings": list(result.warnings),
-        "findings": [
-            {
-                "code": f.code,
-                "cite": f.cite,
-                "summary": f.summary,
-                "detail": f.detail,
-                "days": [d.isoformat() for d in f.days],
-                "grounds": [str(g) for g in f.grounds],
-            }
-            for f in result.findings
-        ],
-    }
-
-
-def _human(result: AuditResult, invoice_date: Any) -> str:
-    """The triage line, for someone deciding whether to send a letter."""
-    strategy = strategy_for(result)
-    ordered = order_findings(result)
-    lines = [
-        f"{result.carrier} {result.invoice_ref}".strip(),
-        f"  terminal          {result.terminal or 'not stated'}",
-        f"  document          {strategy.document_kind}",
-    ]
-
-    if invoice_date is not None:
-        deadline = dispute_request_deadline(InvoiceIssued(issuance_date=invoice_date))
-        lines.append(f"  mitigate by       {deadline.isoformat()} (541.8(a))")
-
-    if result.computed_free_time_expiry is not None:
-        lines.append(
-            f"  free time expires {result.computed_free_time_expiry.isoformat()} "
-            f"({result.computed_charge_days} chargeable day(s))"
-        )
-
-    demanded = _money(result.demanded_total)
-    lines.append(
-        f"  demanded          {demanded}"
-        if demanded is not None
-        else "  demanded          not stated on the document"
-    )
-    recomputed = _money(result.recomputed_total)
-    lines.append(
-        f"  recomputed        {recomputed}"
-        if recomputed is not None
-        else "  recomputed        not computable from what we hold"
-    )
-
-    estimate = estimate_for(result)
-    if estimate is not None:
-        lines.append(f"  at stake          {_money(estimate.amount)}")
-
-    if result.findings:
-        lines.append("")
-        for item in ordered:
-            lines.append(f"  [{item.tier}] {item.code} {item.finding.cite}")
-            lines.append(f"      {item.finding.summary}")
-    else:
-        lines.append("")
-        lines.append("  Nothing worth filing.")
-
-    if result.can_file is False:
-        lines.append("")
-        lines.append("  Not fileable as it stands. Read the blockers above.")
-
-    return "\n".join(lines)
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,29 +159,6 @@ def _audit_one(args: argparse.Namespace) -> _Run:
     )
 
 
-def resolve_disclosed(rate_rule: str, terminal: str) -> Resolution | None:
-    """Resolve the rule the carrier disclosed against the transcribed corpus.
-
-    The rule comes off the document under 541.6(c)(2), so nothing is typed by an
-    operator. A rule we do not hold resolves to a ``Resolution`` with no block and a
-    reason, which ``audit`` turns into a ``tariff_unresolved`` finding rather than a
-    guessed rate.
-
-    ``None`` when the corpus cannot be loaded at all, so a missing or corrupt corpus
-    is a warning rather than an audit that refuses to run.
-    """
-    if not rate_rule:
-        return None
-    try:
-        blocks = tuple(load_corpus().values())
-    except (FixtureError, OSError):
-        return None
-    return resolve(
-        RateQuery(reference=rate_rule, on="container", terminal=terminal or None),
-        blocks,
-    )
-
-
 def _packet_claims(packet: Packet) -> tuple[Claim, ...]:
     """The claims a packet holds, so it can be re-assembled with evidence."""
     return tuple(section.claim for section in packet.sections)
@@ -291,6 +183,19 @@ def _with_evidence(packet: Packet, run: _Run) -> Packet:
     return assemble(_packet_claims(packet), items)
 
 
+def _run_non_audit(args: argparse.Namespace, out: TextIO) -> int | None:
+    """Run a command that is not an audit. ``None`` means it is an audit.
+
+    Split out because adding the intake pushed ``main`` past the point where a reader
+    can hold it, and the fix is fewer returns in one function rather than a suppression.
+    """
+    if args.command == "coverage":
+        return run_coverage(args, out)
+    if args.command == "serve":
+        return serve_intake(args.host, args.port, out)
+    return None
+
+
 def main(argv: list[str] | None = None, stream: TextIO | None = None) -> int:
     """Run one command. Returns the exit code, prints to ``stream`` or stdout."""
     out = stream if stream is not None else sys.stdout
@@ -310,8 +215,9 @@ def main(argv: list[str] | None = None, stream: TextIO | None = None) -> int:
         )
         return EXIT_ENGINE_ERROR
 
-    if args.command == "coverage":
-        return run_coverage(args, out)
+    delegated = _run_non_audit(args, out)
+    if delegated is not None:
+        return delegated
 
     try:
         run = _audit_one(args)
