@@ -321,11 +321,20 @@ blocks, then closed. Proving a control works is part of shipping it.
 
 ## 5. What the codebase looks like
 
-11,139 lines across 50 modules, 1,207 tests, zero runtime dependencies. Dev tools
-only: ruff, mypy, pytest. Measured at commit 8762d51 with
-`find src -name '*.py' ! -name '__init__.py' | xargs wc -l` and `pytest
---collect-only -q`. These numbers move as work lands, so treat `make validate`
-output as authoritative and this paragraph as a snapshot with a date on it.
+17,059 lines across 81 modules, 1,436 tests, zero runtime dependencies. Dev tools
+only: ruff, mypy, pytest.
+
+Lines and modules measured at commit 7f7c066 with
+`find src -name '*.py' ! -name '__init__.py' | xargs wc -l`. They have not moved
+since, because nothing in this repository's history touches `src/` for a reason that
+changes them without landing its own tests alongside.
+
+The test count is **not** dated, and deliberately so. It moves on every pull request
+that adds a test, so any commit named beside it would be a commit that does not
+contain the tests it counts. It is asserted by `test_test_count_is_current` instead,
+which fails on the pull request that makes it wrong.
+
+Treat `make validate` as authoritative for all three.
 
 ```
 src/quayline/
@@ -338,21 +347,48 @@ src/quayline/
   engine/       the audit checks and the recomputation
     daycount.py       expected days from the invoice's own disclosures
     amount.py         expected money from the carrier's own rate rule
+    recovery.py       which findings carry money, and which are diagnostic
+    ordering.py       grounds, claims, ordering, strategy
+    dedupe.py         demotes a day-count finding so dollars are not priced twice
+    forum.py          the reasoned list the letter is written from
+    availability.py   appointment and availability arguments
+    warnings.py       model limits and coverage gaps
     reasonableness.py 545.5 factors
     settings.py       loads config/audit.json
   tariffs/      carrier data, one module per carrier, provenance on every block
-    hapag.py, one.py, blocks.py, registry.py
+    maersk.py, hapag.py, one.py, msc.py, zim.py, cma_cgm.py
+    blocks.py, registry.py, corpus.py, resolution.py, terminals.py, uncovered.py
   calendars/    day counting
     holidays.py, closures.py, freetime.py, window.py, day_basis.py
   models/       the invoice as stated
     invoice.py
   ingest/       documents in
     pdftext.py        born-digital text layer, no OCR
+    bind.py           the bound ledger, and what a missing disclosure means
+    fields.py         541.6 field extraction and its citations
     validate.py       is the extraction internally consistent
   evidence/     evidence and filing out
     capture.py        who took it, when, digest of the bytes
     checklist.py      what each carrier will not accept without
-    packet.py         grouped by ground, automatic claims first
+    packet.py         grouped by ground, and rendered: the filing letter
+  filing/       turning findings into something a carrier receives
+    dispute.py        findings become grounds, with automatic claims first
+    evidence.py       a checked capture, attached to a claim
+  serve/        the local intake. Loopback only, no accounts, nothing on disk
+    app.py            the HTTP handler and the three routes
+    security.py       the one rule, and why there is no flag to widen it
+    upload.py         the transport checks, before the engine sees anything
+    audit_runner.py   the one seam between the CLI and the intake
+    landing.py        the intake page's content, from the worked example
+  web/          the pages and the design system
+    design.py         every colour, measured step and duration, in one place
+    intake.py         the rail, the day grid, the legend, the ledger
+    reasoning.py      the engine's own sentence per day, with its citation
+    result.py         the result page, rendered from structure not from markup
+    filing.py         the printable filing copy, black on white
+    specimen.py       the technical specimen, for a reader who wants the fields
+    document.py       page assembly and the hash-pinned script
+    money.py          how the money is worded, shared by both pages
 ```
 
 **The two independent paths are the strongest signal in the engine.** A day count
@@ -366,10 +402,9 @@ much stronger than either alone.
 
 ## 6. What is done, and what is left
 
-61 issues closed, 37 open, across six milestones. Measured at commit 8762d51
+82 issues closed, 30 open, across six milestones. Measured at commit 7f7c066
 with `gh issue list --state closed --limit 500 --json number --jq length` and the
-same for `--state open`. The open figure includes #165, the refresh you are
-reading.
+same for `--state open`.
 
 | Milestone | Open | Closed | What it is |
 |---|---|---|---|
@@ -382,10 +417,19 @@ reading.
 
 **M1 is closed, all 42 of it.** Everything load bearing is built: the checklist,
 the vacatur, the deadlines, both recomputation paths, the closure model, the
-holiday calendar, the day-count arithmetic, and the tariff blocks for Hapag,
-Maersk, CMA CGM, ONE, MSC, ZIM and Evergreen. The two tariff issues that are
-genuinely holes rather than code are #26 and #27, and both landed as explicit
-acquisition tasks instead of as guesses, which is the outcome the repo wanted.
+holiday calendar, the day-count arithmetic, and tariff modules for Hapag-Lloyd,
+Maersk, CMA CGM, ONE, MSC and ZIM. Evergreen is present as
+`regulation/evergreen.py`, which is the *Evergreen Shipping Agency v. FMC* case
+holding a complainant to three per-day proofs, not a tariff, so it is in
+`regulation/` and not in `tariffs/`. A carrier can appear in one without appearing in
+the other and the distinction is the point.
+
+**One carrier has transcribed rates, and the modules are not the same thing.**
+`quayline coverage` is the authority: it prints that we hold rates for **one**
+carrier, Maersk, and hold nothing for eight. A `tariffs/` module existing means a
+carrier's schedule has been read and a structure exists, not that a rate resolves. The
+distinction is the whole point of section 5's rules, and the fastest way to get it
+wrong is to count modules.
 
 An earlier version of this document ranked #28, #31, #32, #34, #37, #38 and #39 as
 the top remaining work. All seven are closed. Pull requests #130 through #139
@@ -394,23 +438,30 @@ history.
 
 ### The one structural gap, and it is not a milestone
 
-`AGENTS.md` section six describes nine packages under `src/quayline/`. Four of
-them do not exist: `filing/`, `fmc/`, `cli/` and `web/`. There is no `audit()`
-function anywhere in `src/`, and the only one in the repository is a test helper in
-`tests/test_ordering.py`.
+This section used to say there was no spine. There is one, and it has been there
+since #79 closed, so read this as history if you hit the old wording anywhere.
 
-So the pieces are built and nothing joins them. `ingest/` produces validated
-documents, `engine/` produces an `AuditResult`, `evidence/packet.py` assembles a
-dispute packet, and there is no entry point that runs one document through all
-three. The engine recomputes and there is no product on top of it yet.
+`engine/audit.py` provides `audit()`. `cli/` runs it from a terminal. `serve/` runs it
+from a browser. `filing/` turns findings into grounds and grounds into the document a
+carrier receives. `web/` is what a person actually looks at. The pieces are joined.
 
-That gap is why #79 is the highest value open issue. It is not a CLI feature, it
-is the missing spine, and #84 needs the same spine.
+What is genuinely absent is `fmc/`. `AGENTS.md` section six lists it as a package under
+`src/quayline/` and it does not exist, and the reason is that `regulation/evergreen.py`
+already holds what was meant to go in it: the three per-day proofs a complainant has to
+show, per *Evergreen Shipping Agency v. FMC*. Nobody has built the submission
+machinery around those proofs, which is the complaint half of the product as opposed to
+the recomputation half.
+
+So the honest statement is narrower than the old one. **The engine recomputes, the
+letter is assembled, and the complaint is not filed for you.** Everything needed to
+submit to an FMC complaint exists as a rule and none of it exists as code. Issue #62 is
+that work.
 
 ### The order I would take the remaining work in
 
-**First, the spine.** One function that takes a document, runs the checks, and
-returns an `AuditResult`. Then #79 on top of it, which is the CLI: a human triage
+**First, the submission path.** The spine landed in #79 and the letter after it, so
+the remaining half is `fmc/`: the complaint itself, built from grounds the engine has
+already priced. The CLI today gives a human triage
 line, a JSON mode, and exit codes that distinguish no findings, filing-worthy
 findings, and an engine error. #84 then reports what the engine does not know,
 which is the same code path with a different question asked of it.
@@ -480,6 +531,40 @@ to be".**
 window that ran backwards and reported `-212` days remaining for a capture *inside*
 its window. In each case the test checked the part that already worked. **A test
 asserting something untrue is worse than no test, because it looks like coverage.**
+
+**Four pages that each said more than the engine could support.** All four were found
+in review, and all four were prose written by hand rather than data read from the
+result. The intake told a reader to **send a packet the packet gate rejects**, on the
+page that states the packet cannot be filed. The reasoning panel called an unresolved
+tariff a **dispute**, when the days may be right and the money is unknown. The ledger
+called a **negative variance** disputed money, when the carrier billed less than the rule
+allows. The day grid told one kind of carrier that free time covered their disputed day,
+when `OVERBILLED` covers a day inside the allowance *and* a day after it that the
+carrier's own day unit excludes, and the wording was only true of the first. Each one is
+now a test, and in every case the fix was to make the page **ask the engine** rather
+than to word it more carefully. `basis_of(code)` decides which finding carries money;
+the page calls it. **Every sentence a page adds is a claim the engine has not made.**
+
+**A second rendering of a document that already existed.** The result page stopped
+parsing a rendered letter, which was right, and then wrote its own replacement, which
+was not. It silently lost the line saying the packet cannot be filed, so a shipper
+copying it sent a document which nowhere said it was not ready to send. The bug class
+the change claimed to remove came back one pull request later. **Fixing a coupling by
+replacing it with a second copy is not a fix**, and the test that should have caught it
+asserted containment where it needed equality, because a document missing one line and
+keeping everything else still contains the rest.
+
+**Three defects that only a screenshot could find.** A stylesheet whose braces were
+doubled, so the browser discarded every rule and the page rendered bare while a test
+confirmed a `<style>` tag was present. A page that emitted the rail, the day grid, the
+legend and the ledger and shipped CSS for none of them. A `font-family` with a weight
+inside it, `800 system-ui`, which is invalid, so the heading meant to be a heavy
+grotesque rendered as Times. None of these is reachable from a test suite that does not
+render. **Look at the page.** The guard written afterward checks that every
+class a page emits has a rule in the stylesheet that page ships, and that it ships no
+rule belonging to another page. That catches the second. It does **not** catch the
+third, and this document does not claim it does: a class-to-rule check cannot see that
+`800 system-ui` is a weight sitting inside a family. **Say what a check covers.**
 
 **An over-strict rule shipped knowingly.** The ONE power-of-attorney requirement
 is `UNVERIFIED` and may block submissions ONE would have accepted. That is the
