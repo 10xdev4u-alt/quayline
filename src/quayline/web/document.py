@@ -173,7 +173,7 @@ Money = tuple[str, str, str]
 def intake_document(
     *,
     days: object,
-    day_count: object,
+    result: object,
     rail_pairs: list[tuple[str, str]],
     money: Money,
     fixture_note: str,
@@ -184,10 +184,13 @@ def intake_document(
     three parameters because the three are only ever meaningful together and a reader
     should not have to check the argument order.
 
-    ``day_count`` carries the engine's own reasoning for the grid above it. Without it
-    the page would show coloured boxes asserting an answer and withholding the argument,
-    which is the posture this project is trying not to have.
+    ``result`` is the ``AuditResult``. The page needs two things out of it: the day count,
+    which carries the engine's own reasoning for the grid above, and the findings, which
+    say what each of those rows is worth. Without both, the page would show coloured
+    boxes asserting an answer and withholding the argument, which is the posture this
+    project is trying not to have.
     """
+    day_count = getattr(result, "day_count", None)
     flagged = days_with_findings(day_count)
     body = (
         '<div class="manifest">\n'
@@ -203,7 +206,7 @@ def intake_document(
         "on the invoice itself, under the rule the carrier was required to publish.</p>\n"
         f"{day_cells(days, flagged)}\n"
         f"{legend()}\n"
-        f"{reasoning_panel(day_count)}\n"
+        f"{reasoning_panel(day_count, result)}\n"
         f"{ledger(*money)}\n"
         '<form class="drop" method="post" action="/letter" enctype="multipart/form-data">\n'
         '<span class="stencil">your invoice</span>\n'
