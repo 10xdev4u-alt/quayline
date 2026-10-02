@@ -31,7 +31,7 @@ from __future__ import annotations
 import base64
 import hashlib
 
-from quayline.evidence.packet import GroundSection
+from quayline.evidence.packet import GroundSection, render
 from quayline.serve.audit_runner import Findings
 from quayline.web.design import stylesheet
 from quayline.web.example import day, money
@@ -90,6 +90,13 @@ RESULT_CSS = """
   font-family: var(--font-data); font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: var(--gap); align-items: center; }
 .actions button { flex: 0 0 auto; }
+/* The filing copy re-uploads the invoice, because the server keeps nothing. The file
+   input is collapsed until it is needed: a reader who wants the filing copy should not
+   first be shown a second file dialog. */
+.actions .filing-go { display: flex; flex-wrap: wrap; gap: var(--gap-tight); align-items: center; margin: 0; }
+.actions .filing-go input[type='file'] { flex: 1 1 12rem; min-width: 0; font-size: 0.82rem;
+  color: var(--slate); border: 1px solid var(--edge-strong); background: var(--quay);
+  padding: 0.5rem; font-family: var(--font-data); }
 .hint { color: var(--slate); font-size: 0.8rem; }
 @media (max-width: 40rem) { .verdict .amount { font-size: 2.4rem; } }
 """
@@ -144,30 +151,25 @@ def ground_section(section: GroundSection) -> str:
 
 
 def letter_text(findings: Findings) -> str:
-    """The letter as plain text, for the textarea.
+    """The filing document, exactly as ``evidence.packet.render`` writes it.
 
-    Rendered here rather than taken from the packet renderer, so the copy is the same
-    words the reader can see on the page and neither can drift from the other.
+    This used to be a second rendering written here from the packet objects. That was a
+    regression of the thing issue 196 removed: the old page parsed the rendered letter to
+    get the day strip back out, and this re-rendered the same packet a second time and
+    lost what it did not know about.
+
+    Three things went missing, and the worst of them was the line saying the packet
+    cannot be filed as it stands. A shipper who copied that letter sent a document that
+    nowhere said it was not ready to send, which is the single failure this packet module
+    exists to prevent. The automatic and contested split went too, and that grouping is
+    what makes a packet workable for a carrier's respondent.
+
+    So there is one document and this is it. ``render`` already groups the claims, already
+    states the filing status, and is what a reviewer would diff against the engine
+    anyway. A test asserts byte equality rather than containment, because a document that
+    lost the filing status and kept everything else would still pass a containment check.
     """
-    lines = [
-        "Dispute of charges",
-        "",
-        f"Invoice date: {day(findings.bound.invoice_date)}",
-        f"Carrier: {findings.result.carrier}",
-        f"Terminal: {findings.result.terminal}",
-        "",
-    ]
-    for section in findings.packet.sections:
-        lines.append(f"{section.claim.ground}  {section.claim.title}")
-        if section.claim.amount_at_stake is not None:
-            lines.append(f"  amount at stake: {money(section.claim.amount_at_stake)}")
-        lines.append(f"  {section.claim.basis}")
-        for item in section.evidence:
-            lines.append(f"  evidence ({item.kind}): {item.description}")
-        if section.blocked:
-            lines.append(f"  BLOCKED: {section.reason}")
-        lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
+    return render(findings.packet)
 
 
 def _ledger(findings: Findings, disputed_label: str) -> str:
@@ -319,6 +321,20 @@ def result_page(findings: Findings) -> str:
         f"{esc(letter_text(findings))}</textarea>\n"
         '<div class="actions">'
         '<button type="button" id="copy">Copy the letter</button>'
+        # The filing copy needs the invoice again. The server holds nothing between
+        # requests on purpose, so the PDF is re-posted from the browser rather than kept.
+        # A GET route that recomputed the worked example would hand a client a filing
+        # copy about someone else's invoice, which is worse than not having the button.
+        '<form class="filing-go" method="post" action="/filing" '
+        'enctype="multipart/form-data">'
+        '<label class="sr" for="filing-pdf">Your invoice, again</label>'
+        '<input id="filing-pdf" type="file" name="pdf" accept="application/pdf" required>'
+        '<label class="sr" for="filing-carrier">Carrier</label>'
+        f'<input id="filing-carrier" type="hidden" name="carrier" value="{esc(result.carrier)}">'
+        '<label class="sr" for="filing-terminal">Terminal</label>'
+        f'<input id="filing-terminal" type="hidden" name="terminal" value="{esc(result.terminal)}">'
+        '<button type="submit">Get the filing copy</button>'
+        "</form>\n"
         '<span class="hint" id="copied" role="status" aria-live="polite"></span>'
         "</div>\n"
         '<p class="hint"><a href="/">Audit another invoice</a></p>\n'

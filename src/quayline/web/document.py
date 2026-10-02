@@ -151,7 +151,7 @@ def script_hash() -> str:
     return "sha256-" + base64.b64encode(digest).decode()
 
 
-def _document(body: str, title: str, extra_style: str = "") -> str:
+def document(body: str, title: str, extra_style: str = "") -> str:
     return (
         "<!doctype html>\n"
         '<html lang="en">\n'
@@ -236,7 +236,7 @@ def intake_document(
         "</div>\n"
         f"<script>{SCRIPT}</script>"
     )
-    return _document(body, "Quayline: recompute the days")
+    return document(body, "Quayline: recompute the days")
 
 
-__all__ = ["SCRIPT", "intake_document", "script_hash"]
+__all__ = ["SCRIPT", "document", "intake_document", "script_hash"]

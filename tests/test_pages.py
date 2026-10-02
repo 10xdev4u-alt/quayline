@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import dataclasses
 import hashlib
+import html
 import re
 from pathlib import Path
 
@@ -27,12 +28,14 @@ import pytest
 
 from quayline.cli.audit_render import resolve_disclosed
 from quayline.engine.daycount import Direction
+from quayline.evidence.packet import render
 from quayline.serve.audit_runner import Findings, find_runner
 from quayline.serve.landing import landing_document
 from quayline.web import reasoning
 from quayline.web import result as result_module
 from quayline.web.design import stylesheet
 from quayline.web.example import FIXTURE
+from quayline.web.filing import PRINT_CSS, filing_document
 from quayline.web.landing_page import landing_page
 from quayline.web.reasoning import (
     DIRECTION_WORD,
@@ -44,7 +47,14 @@ from quayline.web.reasoning import (
     reasoning_panel,
 )
 from quayline.web.render import generate
-from quayline.web.result import result_page
+from quayline.web.result import letter_text, result_page
+
+
+def _textarea(page: str) -> str:
+    """The text a reader copies. Asserting it exists is part of the test."""
+    found = re.search(r"<textarea[^>]*>(.*?)</textarea>", page, re.S)
+    assert found is not None, "the page offers no textarea to copy from"
+    return found.group(1)
 
 
 def _result_page() -> str:
@@ -252,7 +262,11 @@ def test_the_letter_is_readable_without_javascript() -> None:
     findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
     page = result_page(findings)
     assert page.count("<textarea") == 1 and "readonly" in page
-    assert "Dispute of charges" in page, "the whole letter is in the markup"
+    assert "Automatic claims" in page, "the whole letter is in the markup"
+    assert "cannot be filed" in page, (
+        "the engine's filing status has to survive into the copyable text, because a "
+        "letter that does not say it is not ready to send is the worst version of it"
+    )
     # The script only ever copies. It never fetches and it never rewrites the page, so
     # the page without it is the same page.
     copy = result_module.COPY_SCRIPT
@@ -286,7 +300,7 @@ def test_a_blocked_packet_is_never_told_to_send() -> None:
     page = result_page(findings)
     assert "Send the letter" not in page
     assert "cannot be sent yet" in page
-    assert "BLOCKED" in page, "and the letter itself marks the ground as blocked"
+    assert "cannot be filed" in page, "and the letter itself says so, in the engine's words"
 
 
 def test_a_clean_result_is_never_labelled_disputed() -> None:
@@ -509,3 +523,55 @@ def test_the_page_never_prints_an_amount_the_engine_did_not_compute() -> None:
     assert amounts <= allowed, (
         f"the page shows money the engine did not compute: {amounts - allowed}"
     )
+
+
+def test_the_copyable_letter_is_the_engines_document_byte_for_byte() -> None:
+    """One document, not two.
+
+    The page used to re-render the packet itself, and lost three things doing it: the
+    statement that the packet cannot be filed, the split between automatic and contested
+    claims, and the engine's wording. A shipper who copied that letter sent a document
+    that nowhere said it was not ready to send.
+
+    Asserted as equality rather than containment, because a document that kept
+    everything except the filing status would still pass a containment check, and that is
+    precisely the regression.
+    """
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    assert letter_text(findings) == render(findings.packet)
+
+    page = result_page(findings)
+    in_textarea = html.unescape(_textarea(page))
+    assert in_textarea == render(findings.packet), (
+        "the text a reader copies is the engine's letter, not a lookalike"
+    )
+
+
+def test_the_filing_copy_carries_the_filing_status_and_a_signature() -> None:
+    """The copy that leaves the building is the one where a warning must not be missed."""
+
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    assert findings.packet.can_file is False
+    page = filing_document(findings)
+    assert "Not ready to file" in page
+    assert "cannot be filed" in page, "and the engine's own status line is on it"
+    assert "Signed, name and date" in page, "a filing copy has to be signable"
+    # parties, all read from the result
+    for expected in (findings.result.carrier, findings.result.terminal, findings.bound.rate_rule):
+        assert expected in page
+
+
+def test_the_print_view_is_black_on_white_and_hides_everything_else() -> None:
+    """Paper is not a screen.
+
+    The pages are near-black because that is right on a display. Printed, that is toner
+    the carrier pays for and a photocopy nobody can read. So the print block sets white
+    ground and black text explicitly, does not consult the scheme, and drops the chrome.
+    """
+
+    block = PRINT_CSS.split("@media print")[1]
+    assert "background: #fff !important" in block
+    assert "color: #000 !important" in block
+    for dropped in (".filing-bar", ".sign", ".foot"):
+        assert dropped in block, f"{dropped} must not print"
+    assert "display: none !important" in block
