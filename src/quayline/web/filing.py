@@ -36,6 +36,7 @@ from quayline.serve.audit_runner import Findings
 from quayline.web.document import document
 from quayline.web.example import day, money
 from quayline.web.intake import esc
+from quayline.web.money import disputed_label
 
 #: Only print media. The page is legible on screen too, because a reader who wants to
 #: check the filing copy before printing it should be able to, but it is built for paper:
@@ -87,13 +88,17 @@ PRINT_CSS = """
   :root { color-scheme: light; }
   body { background: #fff !important; color: #000 !important; }
   .filing { max-width: none; padding: 0; }
-  /* Nothing that is not the letter belongs on the page a carrier reads. */
-  .filing-bar, .sign, .foot { display: none !important; }
+  /* Nothing that is not the letter belongs on the page a carrier reads. The signature
+     block is the exception and the reason this page exists: a filing copy that prints
+     without a line to sign is not a filing copy. */
+  .filing-bar, .foot { display: none !important; }
   h1, h2, dt, .status strong { color: #000 !important; }
   .filing .status { border: 1px solid #000; }
   .filing .doc { background: #fff; border: 0; padding: 0; font-size: 10.5pt; line-height: 1.5; }
   .filing .parties div { border-bottom: 1px solid #000; }
   .filing .parties dt, .filing .sign span { color: #000 !important; }
+  /* The rule the signature goes on, in ink rather than chalk. */
+  .filing .sign div { border-top: 1px solid #000; margin-top: 2.6rem; }
   .day { break-inside: avoid; }
   a { color: #000 !important; text-decoration: none; }
 }
@@ -115,7 +120,7 @@ def _parties(findings: Findings) -> str:
         f'<dd class="data">{esc(money(result.demanded_total))}</dd></div>'
         f'<div><dt class="stencil">amount allowed</dt>'
         f'<dd class="data">{esc(money(result.recomputed_total))}</dd></div>'
-        f'<div><dt class="stencil">disputed</dt>'
+        f'<div><dt class="stencil">{esc(disputed_label(result))}</dt>'
         f'<dd class="data">{esc(money(result.variance))}</dd></div>'
         "</dl>"
     )

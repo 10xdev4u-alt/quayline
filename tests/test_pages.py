@@ -37,6 +37,7 @@ from quayline.web.design import stylesheet
 from quayline.web.example import FIXTURE
 from quayline.web.filing import PRINT_CSS, filing_document
 from quayline.web.landing_page import landing_page
+from quayline.web.money import DIFFERENCE, DISPUTED, disputed_label
 from quayline.web.reasoning import (
     DIRECTION_WORD,
     UNKNOWN_DIRECTION,
@@ -572,6 +573,43 @@ def test_the_print_view_is_black_on_white_and_hides_everything_else() -> None:
     block = PRINT_CSS.split("@media print")[1]
     assert "background: #fff !important" in block
     assert "color: #000 !important" in block
-    for dropped in (".filing-bar", ".sign", ".foot"):
-        assert dropped in block, f"{dropped} must not print"
+    for dropped in (".filing-bar", ".foot"):
+        assert f"{dropped}, " in block or dropped in block, f"{dropped} must not print"
     assert "display: none !important" in block
+    # The signature line is the reason this page exists, so it must survive printing.
+    # A filing copy that prints with nowhere to sign is a form, not a letter. An earlier
+    # version hid it and a test asserted the hiding, which is how the bug was pinned.
+    hidden = block.split("{ display: none !important; }")[0]
+    assert ".sign" not in hidden, "the signature block must print"
+    assert ".filing .sign div { border-top: 1px solid #000" in block, (
+        "and its rule has to be ink, because var(--chalk) is invisible on white"
+    )
+
+
+def test_the_two_pages_cannot_disagree_about_the_money_label() -> None:
+    """A negative variance prints as a difference, on both pages.
+
+    The filing copy had its own label and it said "disputed" unconditionally, so a
+    negative variance would print as disputed money on a signed filing. That is the last
+    place on this project where that particular error does real damage.
+    """
+
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    assert findings.result.variance and findings.result.variance > 0
+    assert disputed_label(findings.result) == DISPUTED
+    assert DISPUTED in result_page(findings)
+    assert DISPUTED in filing_document(findings)
+
+    # A result with no findings is not a dispute, on either page.
+    clean = dataclasses.replace(
+        findings,
+        result=dataclasses.replace(findings.result, findings=()),
+        packet=dataclasses.replace(findings.packet, sections=()),
+    )
+    assert disputed_label(clean.result) == DIFFERENCE
+    # Asserted on the ledger row, not the word: the heading says "Dispute of charges"
+    # and the engine's own letter says "Contested claims", both on a page with nothing to
+    # dispute, and neither is a claim about money.
+    clean_copy = filing_document(clean)
+    assert ">disputed</dt>" not in clean_copy
+    assert ">difference</dt>" in clean_copy

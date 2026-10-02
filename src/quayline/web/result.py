@@ -44,6 +44,7 @@ from quayline.web.intake import (
     legend,
     rail,
 )
+from quayline.web.money import disputed_label, verdict_of
 from quayline.web.reasoning import (
     DISCREPANCY_CSS,
     days_with_findings,
@@ -194,31 +195,6 @@ def _ledger(findings: Findings, disputed_label: str) -> str:
     )
 
 
-def _verdict(findings: Findings) -> tuple[str, str, str]:
-    """What to call this result, and how much money is actually in dispute.
-
-    Three cases, because two of them are not a dispute and saying otherwise is the one
-    error this project exists not to make.
-
-    - No findings at all: nothing to dispute.
-    - Only an unresolved tariff: we could not price the rule. The days may be right and
-      the money is unknown. That is not a dispute and must not be labelled one.
-    - Anything else: a dispute, and the amount at stake is the variance, but only when
-      it is positive. A negative variance means the carrier billed less than the
-      recomputation allows, which is not money to dispute.
-    """
-    result = findings.result
-    substantive = [f for f in result.findings if "tariff_unresolved" not in f.code]
-
-    if not result.findings:
-        return "Nothing to dispute on this invoice.", "nothing", "clean"
-    if not substantive:
-        return "We could not price this invoice.", "not priced", "unresolved"
-    if result.variance is not None and result.variance > 0:
-        return "There is a dispute here.", money(result.variance), "dispute"
-    return "There is a finding here.", "see the grounds", "dispute"
-
-
 def _next_step(findings: Findings, verdict: str) -> str:
     """Tell the reader what to do, and do not tell them to send what cannot be sent.
 
@@ -283,9 +259,9 @@ def result_page(findings: Findings) -> str:
     """The result, as a document rather than a dump."""
     result = findings.result
     flagged = days_with_findings(result.day_count)
-    heading, stake, verdict = _verdict(findings)
+    heading, stake, verdict = verdict_of(result)
     next_step = _next_step(findings, verdict)
-    disputed_label = "disputed" if verdict == "dispute" and result.variance else "difference"
+    label = disputed_label(result)
     return (
         "<!doctype html>\n"
         '<html lang="en">\n'
@@ -309,7 +285,7 @@ def result_page(findings: Findings) -> str:
         f"{day_cells(findings.strip.days if findings.strip else [], flagged)}\n"
         f"{legend()}\n"
         f"{reasoning_panel(findings.result.day_count, findings.result)}\n"
-        f"{_ledger(findings, disputed_label)}\n"
+        f"{_ledger(findings, label)}\n"
         f"{''.join(ground_section(s) for s in findings.packet.sections)}\n"
         '<div class="next">'
         "<h2>What to do next</h2>"
