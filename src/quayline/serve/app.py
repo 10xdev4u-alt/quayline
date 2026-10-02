@@ -56,6 +56,7 @@ from quayline.serve.upload import (
     error as _error,
 )
 from quayline.web.document import script_hash
+from quayline.web.filing import filing_document
 from quayline.web.result import result_page
 from quayline.web.result import script_hash as result_script_hash
 
@@ -297,8 +298,8 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
             return pdf, fields
 
         def do_POST(self) -> None:
-            if self.path not in ("/audit", "/letter"):
-                self._not_found(self.path, "/audit or /letter")
+            if self.path not in ("/audit", "/letter", "/filing"):
+                self._not_found(self.path, "/audit, /letter or /filing")
                 return
 
             upload = self._read_upload()
@@ -310,7 +311,7 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
             # One branch, one runner. The two routes want different things and running
             # both would audit the same PDF twice, which on a one-connection server means
             # every other request waits for work nobody asked for.
-            structured = self.path == "/letter"
+            structured = self.path in ("/letter", "/filing")
             try:
                 if structured:
                     findings = find_fn(pdf, carrier, terminal)
@@ -329,7 +330,9 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
                 )
                 return
 
-            if structured:
+            if self.path == "/filing":
+                self._html(code, filing_document(findings))
+            elif structured:
                 self._html(code, result_page(findings))
             else:
                 self._send(_http_status(code), output, "application/json; charset=utf-8")
