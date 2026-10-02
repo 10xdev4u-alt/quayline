@@ -44,6 +44,11 @@ from quayline.web.intake import (
     legend,
     rail,
 )
+from quayline.web.reasoning import (
+    DISCREPANCY_CSS,
+    days_with_findings,
+    reasoning_panel,
+)
 
 RESULT_CSS = """
 /* Single column, so the rail lays out as a header block rather than a narrow column. */
@@ -275,6 +280,7 @@ COPY_SCRIPT = """
 def result_page(findings: Findings) -> str:
     """The result, as a document rather than a dump."""
     result = findings.result
+    flagged = days_with_findings(result.day_count)
     heading, stake, verdict = _verdict(findings)
     next_step = _next_step(findings, verdict)
     disputed_label = "disputed" if verdict == "dispute" and result.variance else "difference"
@@ -285,7 +291,7 @@ def result_page(findings: Findings) -> str:
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         "<title>Quayline: your dispute</title>\n"
-        f"<style>{stylesheet()}{COMPONENT_CSS}{RESULT_CSS}</style>\n"
+        f"<style>{stylesheet()}{COMPONENT_CSS}{DISCREPANCY_CSS}{RESULT_CSS}</style>\n"
         "</head>\n"
         "<body>\n"
         '<div class="wrap">\n'
@@ -298,8 +304,9 @@ def result_page(findings: Findings) -> str:
         # Which invoice was actually audited. A client who uploaded the wrong PDF
         # should find out here rather than in the carrier's reply.
         f"{rail(_rail_pairs(findings))}\n"
-        f"{day_cells(findings.strip.days) if findings.strip else ''}\n"
+        f"{day_cells(findings.strip.days if findings.strip else [], flagged)}\n"
         f"{legend()}\n"
+        f"{reasoning_panel(findings.result.day_count)}\n"
         f"{_ledger(findings, disputed_label)}\n"
         f"{''.join(ground_section(s) for s in findings.packet.sections)}\n"
         '<div class="next">'

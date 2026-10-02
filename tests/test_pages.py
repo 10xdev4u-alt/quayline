@@ -26,12 +26,20 @@ from pathlib import Path
 import pytest
 
 from quayline.cli.audit_render import resolve_disclosed
+from quayline.engine.daycount import Direction
 from quayline.serve.audit_runner import Findings, find_runner
 from quayline.serve.landing import landing_document
 from quayline.web import result as result_module
 from quayline.web.design import stylesheet
 from quayline.web.example import FIXTURE
 from quayline.web.landing_page import landing_page
+from quayline.web.reasoning import (
+    DIRECTION_WORD,
+    UNKNOWN_DIRECTION,
+    days_with_findings,
+    direction_word,
+    reasoning_panel,
+)
 from quayline.web.render import generate
 from quayline.web.result import result_page
 
@@ -298,3 +306,79 @@ def test_a_clean_result_is_never_labelled_disputed() -> None:
     # because the fixture genuinely has a disputed day.
     assert "<dt>disputed</dt>" not in page, "no dispute is claimed, so no row is labelled one"
     assert "<dt>difference</dt>" in page
+
+
+def test_the_engine_reasoning_is_shown_on_every_page_that_shows_the_grid() -> None:
+    """A grid of coloured boxes with no argument behind it is an assertion.
+
+    The engine computes a sentence per discrepancy and a clause to stand on. If a page
+    shows the days and withholds that, the reader has to take the word on faith, which
+    is the least credible posture available to a product whose value is that it is
+    checkable.
+    """
+    for name, build in PAGES.items():
+        page = build()
+        assert page.count('class="day"') > 0, f"{name} shows a grid"
+        assert 'class="reason"' in page, f"{name} shows a grid but not its reasoning"
+        cites = re.findall(r'class="disc-cite[^"]*"[^>]*>([^<]+)<', page)
+        assert cites, f"{name} cites nothing, so nothing on it can be checked"
+        for cite in cites:
+            assert re.search(r"541\.\d|\d+ U\.S\.C|46 CFR", cite), (
+                f"{name} shows a citation that is not one: {cite!r}"
+            )
+
+
+def test_the_cited_sentences_are_the_engines_own() -> None:
+    """Nothing on the panel may say more than ``Discrepancy.detail`` says.
+
+    The temptation is to write "the carrier overcharged you" where the engine says "were
+    charged although the stated allowance under 541.6(b)(3) exhausted on 2026-07-08".
+    The second is the sentence a respondent can check, and paraphrasing it is exactly how
+    an overclaim gets onto a page.
+    """
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    day_count = findings.result.day_count
+    assert day_count is not None, "the fixture is the case that produces a day count"
+    panel = reasoning_panel(day_count)
+    for item in day_count.discrepancies:
+        assert item.detail in panel, f"the engine's own words must survive: {item.detail}"
+        assert item.citation in panel
+
+
+def test_a_day_is_only_marked_when_the_engine_flagged_it() -> None:
+    """No invented findings. A dot on a day is a claim that something is wrong there."""
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    flagged = days_with_findings(findings.result.day_count)
+    assert findings.strip is not None, "the fixture produces a strip"
+    every = {day.day.isoformat() for day in findings.strip.days}
+    assert flagged, "the fixture has discrepancies"
+    assert set(flagged) <= every, "a flagged day has to be a day that exists"
+    clean = [day for day in every if day not in flagged]
+    assert clean, "and most days are not flagged"
+    page = result_page(findings)
+    assert page.count('data-flagged="true"') == len(flagged)
+    assert page.count('data-flagged="false"') == len(every) - len(flagged)
+
+
+def test_the_direction_table_has_no_gaps() -> None:
+    """A new direction must fail here rather than fall through to a shrug.
+
+    ``DIRECTION_WORD`` is the only place this module writes words of its own, so it is
+    also the only place a new engine value could arrive unannounced.
+    """
+    seen = {member.value for member in Direction}
+    missing = sorted(seen - set(DIRECTION_WORD))
+    # ``clean`` is the absence of a discrepancy and never reaches a discrepancy row,
+    # so it needs no wording.
+    missing = [name for name in missing if name != "clean"]
+    assert not missing, f"the engine can report {missing} and this module has no words"
+    assert direction_word(Direction.OVERBILLED).startswith("the carrier billed")
+    assert direction_word(object()) == UNKNOWN_DIRECTION
+
+
+def test_the_reasoning_survives_with_scripting_blocked() -> None:
+    """It is server-rendered markup, so there is nothing to block."""
+    for name, build in PAGES.items():
+        page = build()
+        panel = page.split('class="reason"', 1)[1] if 'class="reason"' in page else ""
+        assert "541.6(b)(8)" in panel or "541." in panel, f"{name} inlines the clause"

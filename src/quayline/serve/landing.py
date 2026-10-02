@@ -19,6 +19,7 @@ def landing_document() -> str:
     strip, result, rail = example_audit()
     return intake_document(
         days=strip.days,
+        day_count=result.day_count,
         rail_pairs=rail,
         money=(
             money(result.demanded_total),

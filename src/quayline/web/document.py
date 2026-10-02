@@ -34,6 +34,11 @@ from quayline.web.intake import (
     legend,
     rail,
 )
+from quayline.web.reasoning import (
+    DISCREPANCY_CSS,
+    days_with_findings,
+    reasoning_panel,
+)
 
 #: Staged progress, the staggered reveal, the count up, and the drop target. Plain ES2017,
 #: no library, no network. Every branch is guarded so a failure here degrades to the
@@ -154,7 +159,7 @@ def _document(body: str, title: str, extra_style: str = "") -> str:
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{esc(title)}</title>\n"
-        f"<style>{stylesheet()}{COMPONENT_CSS}{INTAKE_CSS}{extra_style}</style>\n"
+        f"<style>{stylesheet()}{COMPONENT_CSS}{DISCREPANCY_CSS}{INTAKE_CSS}{extra_style}</style>\n"
         "</head>\n"
         f"<body>\n{body}\n</body>\n"
         "</html>\n"
@@ -168,6 +173,7 @@ Money = tuple[str, str, str]
 def intake_document(
     *,
     days: object,
+    day_count: object,
     rail_pairs: list[tuple[str, str]],
     money: Money,
     fixture_note: str,
@@ -177,7 +183,12 @@ def intake_document(
     ``money`` is billed, allowed, excess, in that order. It is one tuple rather than
     three parameters because the three are only ever meaningful together and a reader
     should not have to check the argument order.
+
+    ``day_count`` carries the engine's own reasoning for the grid above it. Without it
+    the page would show coloured boxes asserting an answer and withholding the argument,
+    which is the posture this project is trying not to have.
     """
+    flagged = days_with_findings(day_count)
     body = (
         '<div class="manifest">\n'
         '<header class="head">'
@@ -190,8 +201,9 @@ def intake_document(
         '<p class="lede">Demurrage and detention are decided one day at a time, so that is '
         "how this page reads. Every day below was recomputed from the disclosures printed "
         "on the invoice itself, under the rule the carrier was required to publish.</p>\n"
-        f"{day_cells(days)}\n"
+        f"{day_cells(days, flagged)}\n"
         f"{legend()}\n"
+        f"{reasoning_panel(day_count)}\n"
         f"{ledger(*money)}\n"
         '<form class="drop" method="post" action="/letter" enctype="multipart/form-data">\n'
         '<span class="stencil">your invoice</span>\n'

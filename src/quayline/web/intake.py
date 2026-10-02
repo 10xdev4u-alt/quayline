@@ -63,11 +63,15 @@ COMPONENT_CSS = """
 }
 .day .n { font-size: 1.5rem; line-height: 1; }
 .day .when { font-size: 0.72rem; color: var(--slate); }
+/* Sized to the longest word, which is "disputed". A flagged day carries a marker next
+   to its number as well, so this cell is narrower than the unflagged ones and the
+   label has to fit inside it without clipping. */
 .day .state {
-  font-size: 0.66rem;
-  letter-spacing: 0.08em;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   font-weight: 700;
+  white-space: nowrap;
 }
 .day[data-state='free'] { border-color: color-mix(in srgb, var(--sea) 55%, var(--edge)); }
 .day[data-state='free'] .state { color: var(--sea); }
@@ -189,17 +193,25 @@ def esc(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
-def day_cells(days: Any) -> str:
-    """One cell per day. The number, the date, and the state in words."""
+def day_cells(days: Any, flagged: dict[str, list[Any]] | None = None) -> str:
+    """One cell per day. The number, the date, and the state in words.
+
+    ``flagged`` marks the days the engine has a discrepancy on. The marker is a dot and
+    a border weight as well as a colour, so a reader who cannot separate the three
+    accents still sees which days the reasoning below talks about.
+    """
+    flagged = flagged or {}
     cells = []
     for index, day in enumerate(days, start=1):
         state = day.state
         accent = STATE_ACCENT.get(state, "var(--slate)")
+        key = day.day.isoformat()
+        has = "true" if key in flagged else "false"
         cells.append(
-            f'<div class="day" data-state="{esc(state)}" '
+            f'<div class="day" data-state="{esc(state)}" data-flagged="{has}" '
             f'style="--accent:{accent}">'
             f'<span class="n data">{esc(index)}</span>'
-            f'<span class="when data">{esc(day.day.isoformat()[5:])}</span>'
+            f'<span class="when data">{esc(key[5:])}</span>'
             f'<span class="state">{esc(STATE_WORD.get(state, state))}</span>'
             f"</div>"
         )

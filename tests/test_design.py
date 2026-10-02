@@ -55,6 +55,28 @@ class _Day:
 CELLS = [_Day(d["day"], d["state"]) for d in DAYS]
 
 
+class _Discrepancy:
+    def __init__(self, detail: str, citation: str) -> None:
+        self.direction = type("D", (), {"value": "overbilled"})()
+        self.dates = tuple(CELLS[1].day for _ in range(1))
+        self.detail = detail
+        self.citation = citation
+
+
+class _DayCount:
+    """Just enough for the page to reason from, so a stub page still shows an argument."""
+
+    discrepancies = (
+        _Discrepancy("were charged although the stated allowance was exhausted", "541.6(b)(8)"),
+    )
+
+
+#: The stub pages carry the engine's reasoning, because the page needs it to explain the
+#: grid. A stub with no day count renders the grid and no argument, and a test built on
+#: one silently stopped covering that.
+DAYS_WITH_REASONING = _DayCount()
+
+
 def test_no_other_module_writes_a_hex_value() -> None:
     """The palette lives in one place, so a reviewer can read the whole thing at once.
 
@@ -118,6 +140,7 @@ def test_the_served_script_is_byte_for_byte_the_hashed_script() -> None:
     """The header and the body are built from one constant, and this proves it."""
     page = intake_document(
         days=CELLS,
+        day_count=DAYS_WITH_REASONING,
         rail_pairs=[("carrier", "Maersk")],
         money=MONEY,
         fixture_note="fixture",
@@ -137,6 +160,7 @@ def test_the_page_still_works_with_no_script_at_all() -> None:
     """
     page = intake_document(
         days=CELLS,
+        day_count=DAYS_WITH_REASONING,
         rail_pairs=[("carrier", "Maersk")],
         money=MONEY,
         fixture_note="fixture",
@@ -186,6 +210,7 @@ def test_the_count_up_cannot_leave_a_wrong_number_on_screen() -> None:
     # the value is correct before any script runs, which is what makes the fallback safe
     assert "$390.00" in intake_document(
         days=CELLS,
+        day_count=DAYS_WITH_REASONING,
         rail_pairs=[("carrier", "Maersk")],
         money=MONEY,
         fixture_note="fixture",
@@ -203,6 +228,7 @@ def test_the_fixture_claim_is_never_stronger_than_the_fixture() -> None:
     """No invented customer, no invented recovery rate. Enforced on the rendered page."""
     page = intake_document(
         days=CELLS,
+        day_count=DAYS_WITH_REASONING,
         rail_pairs=[("carrier", "Maersk")],
         money=MONEY,
         fixture_note="The days above are the worked example on this site.",
