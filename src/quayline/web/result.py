@@ -28,6 +28,9 @@ same screen that tells them it needs work.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+
 from quayline.evidence.packet import GroundSection
 from quayline.serve.audit_runner import Findings
 from quayline.web.design import stylesheet
@@ -38,7 +41,6 @@ from quayline.web.intake import (
     STATE_WORD,
     day_cells,
     esc,
-    ledger,
     legend,
     rail,
 )
@@ -113,21 +115,25 @@ def ground_section(section: GroundSection) -> str:
     claim = section.claim
     stake = money(claim.amount_at_stake) if claim.amount_at_stake is not None else "no amount"
     days_text = ", ".join(str(value) for value in claim.days) or "no days listed"
-    body = (
+    # Built up rather than chosen between. A ternary over the whole concatenation
+    # silently dropped the ground, the stake and the days whenever a section carried no
+    # reason, which is the case for every unblocked section.
+    details = (
         "<dl>"
         f'<div><dt class="stencil">ground</dt><dd class="data">{esc(claim.ground)}</dd></div>'
         f'<div><dt class="stencil">amount at stake</dt><dd class="data">{esc(stake)}</dd></div>'
         f'<div><dt class="stencil">days</dt><dd class="data">{esc(days_text)}</dd></div>'
         "</dl>"
         f'<p class="basis">{esc(claim.basis)}</p>'
-        f'<p class="basis">{esc(section.reason)}</p>'
-        if section.reason
-        else f'<p class="basis">{esc(claim.basis)}</p>'
     )
+    if section.reason:
+        details += f'<p class="basis">{esc(section.reason)}</p>'
+    for item in section.evidence:
+        details += f'<p class="basis">{esc(item.kind)}: {esc(item.description)}</p>'
     return (
         '<section class="section">'
         f'<header><span class="stencil">{esc(claim.ground)}</span>{_flag(section)}</header>'
-        f'<div class="body"><h3>{esc(claim.title)}</h3>{body}</div>'
+        f'<div class="body"><h3>{esc(claim.title)}</h3>{details}</div>'
         "</section>"
     )
 
@@ -151,26 +157,127 @@ def letter_text(findings: Findings) -> str:
         if section.claim.amount_at_stake is not None:
             lines.append(f"  amount at stake: {money(section.claim.amount_at_stake)}")
         lines.append(f"  {section.claim.basis}")
+        for item in section.evidence:
+            lines.append(f"  evidence ({item.kind}): {item.description}")
         if section.blocked:
-            lines.append(f"  blocked: {section.reason}")
+            lines.append(f"  BLOCKED: {section.reason}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _ledger(findings: Findings, disputed_label: str) -> str:
+    """The three figures, with the last one labelled honestly.
+
+    A negative variance means the carrier billed less than the recomputation allows.
+    Calling that "disputed" would name money that is not in dispute, so the label
+    changes with the sign rather than with the mood.
+    """
+    result = findings.result
+    variance = result.variance
+    third = money(variance) if variance is not None else "not computed"
+    return (
+        '<dl class="ledger">'
+        f'<div><dt>billed by the carrier</dt><dd class="data">'
+        f"{esc(money(result.demanded_total))}</dd></div>"
+        f'<div><dt>allowed by the disclosed rule</dt><dd class="data">'
+        f"{esc(money(result.recomputed_total))}</dd></div>"
+        f'<div class="excess"><dt>{esc(disputed_label)}</dt>'
+        f'<dd class="data">{esc(third)}</dd></div>'
+        "</dl>"
+    )
+
+
+def _verdict(findings: Findings) -> tuple[str, str, str]:
+    """What to call this result, and how much money is actually in dispute.
+
+    Three cases, because two of them are not a dispute and saying otherwise is the one
+    error this project exists not to make.
+
+    - No findings at all: nothing to dispute.
+    - Only an unresolved tariff: we could not price the rule. The days may be right and
+      the money is unknown. That is not a dispute and must not be labelled one.
+    - Anything else: a dispute, and the amount at stake is the variance, but only when
+      it is positive. A negative variance means the carrier billed less than the
+      recomputation allows, which is not money to dispute.
+    """
+    result = findings.result
+    substantive = [f for f in result.findings if "tariff_unresolved" not in f.code]
+
+    if not result.findings:
+        return "Nothing to dispute on this invoice.", "nothing", "clean"
+    if not substantive:
+        return "We could not price this invoice.", "not priced", "unresolved"
+    if result.variance is not None and result.variance > 0:
+        return "There is a dispute here.", money(result.variance), "dispute"
+    return "There is a finding here.", "see the grounds", "dispute"
+
+
+def _next_step(findings: Findings, verdict: str) -> str:
+    """Tell the reader what to do, and do not tell them to send what cannot be sent.
+
+    ``packet.can_file`` is false whenever any ground is blocked. Telling someone to
+    send a packet the packet gate rejects is the failure this project is built to
+    prevent, so the send guidance only appears when the gate agrees.
+    """
+    if verdict == "clean":
+        return (
+            "<p>No carrier response is needed for this invoice. Keep it: the "
+            "recomputation is reproducible from the disclosures printed on the "
+            "document.</p>"
+        )
+    if verdict == "unresolved":
+        return (
+            "<p>We hold no transcribed rate for this rule, so the money cannot be "
+            "priced. The day count above is still the engine's own. Run "
+            "<code>quayline coverage</code> for what we do hold.</p>"
+        )
+    if not findings.packet.can_file:
+        blocked = sum(1 for section in findings.packet.sections if section.blocked)
+        return (
+            f"<p><b>This packet cannot be sent yet.</b> {blocked} of "
+            f"{len(findings.packet.sections)} grounds have no evidence attached, and a "
+            f"carrier's respondent will not concede a ground that arrives unsupported. "
+            f"Each one states what is missing below.</p>"
+            f"<p>The letter is still rendered so you can read exactly what is being "
+            f"claimed. It is not ready to send.</p>"
+        )
+    return "<p>Send the letter below to the carrier. Every ground is supported.</p>"
+
+
+#: The one thing the script does. Copying is an enhancement over a textarea the reader
+#: can already select, so the page is complete without it and the button is not the only
+#: route to the text.
+COPY_SCRIPT = """
+(function () {
+  var button = document.getElementById('copy');
+  var letter = document.getElementById('letter');
+  var said = document.getElementById('copied');
+  if (!button || !letter) { return; }
+  button.addEventListener('click', function () {
+    var done = function () { if (said) { said.textContent = 'Copied. Paste it into an email.'; } };
+    var failed = function () {
+      // Refusing to pretend is the whole point of this fallback. Saying "copied" when
+      // nothing was copied is worse than saying nothing.
+      letter.focus();
+      letter.select();
+      if (said) { said.textContent = 'Select the text above and copy it.'; }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(letter.value).then(done, failed);
+    } else {
+      failed();
+    }
+  });
+}());
+"""
 
 
 def result_page(findings: Findings) -> str:
     """The result, as a document rather than a dump."""
     result = findings.result
-    stake = result.variance
-    clean = not result.findings
-    heading = "Nothing to dispute on this invoice." if clean else "There is a dispute here."
-    next_step = (
-        "<p>No carrier response is needed for this invoice. Keep it: the recomputation "
-        "is reproducible from the disclosures printed on the document.</p>"
-        if clean
-        else "<p>Send the letter below to the carrier. Where a ground is marked as "
-        "needing evidence, that part cannot be sent yet, and the page says which "
-        "evidence is missing.</p>"
-    )
+    heading, stake, verdict = _verdict(findings)
+    next_step = _next_step(findings, verdict)
+    disputed_label = "disputed" if verdict == "dispute" and result.variance else "difference"
     return (
         "<!doctype html>\n"
         '<html lang="en">\n'
@@ -184,8 +291,8 @@ def result_page(findings: Findings) -> str:
         '<div class="wrap">\n'
         '<header class="verdict">'
         f'<span><span class="stencil">verdict</span><br>{esc(heading)}</span>'
-        f'<span class="amount{" calm" if clean else ""} data">'
-        f"{esc(money(stake) if not clean else 'nothing')}</span>"
+        f'<span class="amount{" calm" if verdict != "dispute" else ""} data">'
+        f"{esc(stake)}</span>"
         "</header>\n"
         "<main>\n"
         # Which invoice was actually audited. A client who uploaded the wrong PDF
@@ -193,7 +300,7 @@ def result_page(findings: Findings) -> str:
         f"{rail(_rail_pairs(findings))}\n"
         f"{day_cells(findings.strip.days) if findings.strip else ''}\n"
         f"{legend()}\n"
-        f"{ledger(money(result.demanded_total), money(result.recomputed_total), money(result.variance))}\n"
+        f"{_ledger(findings, disputed_label)}\n"
         f"{''.join(ground_section(s) for s in findings.packet.sections)}\n"
         '<div class="next">'
         "<h2>What to do next</h2>"
@@ -201,7 +308,8 @@ def result_page(findings: Findings) -> str:
         "</div>\n"
         "<h2>The letter</h2>\n"
         '<p class="hint">Everything above it is evidence. This is the text to send.</p>\n'
-        f'<textarea class="letter" readonly aria-label="The dispute letter">{esc(letter_text(findings))}</textarea>\n'
+        f'<textarea class="letter" id="letter" readonly aria-label="The dispute letter">'
+        f"{esc(letter_text(findings))}</textarea>\n"
         '<div class="actions">'
         '<button type="button" id="copy">Copy the letter</button>'
         '<span class="hint" id="copied" role="status" aria-live="polite"></span>'
@@ -213,16 +321,24 @@ def result_page(findings: Findings) -> str:
         "and no request line was logged.</p>"
         "</footer>\n"
         "</div>\n"
+        f"<script>{COPY_SCRIPT}</script>\n"
         "</body>\n"
         "</html>\n"
     )
 
 
+def script_hash() -> str:
+    """The CSP source expression for the copy script. Base64, not hex."""
+    return "sha256-" + base64.b64encode(hashlib.sha256(COPY_SCRIPT.encode()).digest()).decode()
+
+
 __all__ = [
+    "COPY_SCRIPT",
     "RESULT_CSS",
     "STATE_ACCENT",
     "STATE_WORD",
     "ground_section",
     "letter_text",
     "result_page",
+    "script_hash",
 ]

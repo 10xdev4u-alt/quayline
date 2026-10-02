@@ -17,6 +17,9 @@ is there a rule for it in the CSS that page actually ships.
 
 from __future__ import annotations
 
+import base64
+import dataclasses
+import hashlib
 import re
 from pathlib import Path
 
@@ -222,8 +225,10 @@ def test_the_result_page_states_what_the_reader_must_do_next() -> None:
 
     page = result_page(find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark"))
     assert "What to do next" in page
-    assert "Send the letter" in page
     assert 'id="copy"' in page, "the letter can be copied in one action"
+    # The fixture's packet is blocked, so the page must not tell the reader to send it.
+    assert "cannot be sent yet" in page
+    assert "Send the letter" not in page
 
 
 def test_the_letter_is_readable_without_javascript() -> None:
@@ -235,6 +240,61 @@ def test_the_letter_is_readable_without_javascript() -> None:
 
     findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
     page = result_page(findings)
-    assert "<script" not in page.lower(), "this page needs no script"
-    assert "<textarea" in page and "readonly" in page
-    assert "Dispute of charges" in page
+    assert page.count("<textarea") == 1 and "readonly" in page
+    assert "Dispute of charges" in page, "the whole letter is in the markup"
+    # The script only ever copies. It never fetches and it never rewrites the page, so
+    # the page without it is the same page.
+    copy = result_module.COPY_SCRIPT
+    assert "writeText" in copy
+    for forbidden in ("fetch", "XMLHttpRequest", "innerHTML"):
+        assert forbidden not in copy, f"the copy script must not use {forbidden}"
+
+
+def test_the_copy_script_is_pinned_by_digest() -> None:
+    """Same rule as the intake: one inline script, pinned by base64 digest."""
+    page = result_page(find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark"))
+    assert page.count("<script") == 1
+    expression = result_module.script_hash()
+    assert expression.startswith("sha256-")
+    assert len(base64.b64decode(expression.split("-", 1)[1], validate=True)) == 32
+    served = re.search(r"<script>(.*)</script>", page, re.S)
+    assert served is not None
+    digest = hashlib.sha256(served.group(1).encode()).digest()
+    assert base64.b64encode(digest).decode() == expression.split("-", 1)[1]
+
+
+def test_a_blocked_packet_is_never_told_to_send() -> None:
+    """The failure this project exists to prevent, in the words a reader actually sees.
+
+    ``packet.can_file`` is false whenever a ground has no evidence. A page that says
+    "send this" anyway hands a client a packet their carrier's respondent will reject,
+    and the reader cannot tell that from the page.
+    """
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    assert findings.packet.can_file is False, "the fixture is the blocked case"
+    page = result_page(findings)
+    assert "Send the letter" not in page
+    assert "cannot be sent yet" in page
+    assert "BLOCKED" in page, "and the letter itself marks the ground as blocked"
+
+
+def test_a_clean_result_is_never_labelled_disputed() -> None:
+    """No findings means nothing to dispute, whatever the arithmetic says.
+
+    ``audit`` only records an amount finding for an overbill, so a variance can exist
+    with no dispute behind it. The ledger's last row is labelled from the verdict rather
+    than assumed.
+    """
+    real = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    assert real.result.findings, "the fixture is the disputed case"
+    clean = dataclasses.replace(
+        real,
+        result=dataclasses.replace(real.result, findings=()),
+        packet=dataclasses.replace(real.packet, sections=()),
+    )
+    page = result_page(clean)
+    assert "Nothing to dispute" in page
+    # The ledger row, not the day cell, which is labelled disputed in every result
+    # because the fixture genuinely has a disputed day.
+    assert "<dt>disputed</dt>" not in page, "no dispute is claimed, so no row is labelled one"
+    assert "<dt>difference</dt>" in page

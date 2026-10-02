@@ -141,7 +141,21 @@ INTAKE_CSS = """
   font-family: var(--font-data);
   font-size: 0.82rem;
 }
-.drop input[type='file']::file-selector-.drop input[type='file']::file-selector-.controls { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: var(--gap); text-align: left; }
+.drop input[type='file']::file-selector-button {
+  margin-right: 0.7rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--edge-strong);
+  background: var(--deck);
+  color: var(--chalk);
+  font-family: var(--font-stencil);
+  font-weight: var(--weight-label);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.drop input[type='file']::file-selector-button:hover { border-color: var(--signal); color: var(--signal); }
+.controls { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: var(--gap); text-align: left; }
 .controls > div { flex: 1 1 9rem; min-width: 0; }
 .controls label { display: block; margin-bottom: 0.3rem; }
 .controls input {

@@ -27,10 +27,8 @@ from __future__ import annotations
 
 import json
 from contextlib import suppress
-from email.parser import BytesParser
-from email.policy import HTTP
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any, ClassVar, TextIO, cast
+from typing import Any, ClassVar, TextIO
 
 from quayline.cli.exit_codes import EXIT_CLEAN, EXIT_ENGINE_ERROR
 from quayline.ingest.bind import BindError, OmittedError
@@ -38,27 +36,37 @@ from quayline.serve.audit_runner import AuditRunner, FindRunner
 from quayline.serve.landing import landing_document
 from quayline.serve.pages import first_missing, specimen_page
 from quayline.serve.security import assert_loopback
+from quayline.serve.upload import (
+    BODY_CHUNK as _BODY_CHUNK,
+)
+from quayline.serve.upload import (
+    BODY_TIMEOUT as _BODY_TIMEOUT,
+)
+from quayline.serve.upload import (
+    DRAIN_CAP as _DRAIN_CAP,
+)
+from quayline.serve.upload import (
+    DRAIN_TIMEOUT as _DRAIN_TIMEOUT,
+)
+from quayline.serve.upload import (
+    MAX_UPLOAD_BYTES,
+    parse_multipart,
+)
+from quayline.serve.upload import (
+    error as _error,
+)
 from quayline.web.document import script_hash
 from quayline.web.result import result_page
+from quayline.web.result import script_hash as result_script_hash
 
-#: The largest upload we accept. A carrier invoice PDF is a few hundred kilobytes, so
-#: this is generous by an order of magnitude and it exists to stop a mistake rather than
-#: a document.
-MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 
-#: Most of an oversize body we will read purely to leave the socket usable. Bounded so
-#: a hostile Content-Length cannot make the server do the work it just refused.
-_DRAIN_CAP = 256 * 1024
+def _script_hashes() -> tuple[str, ...]:
+    """Every inline script this server can serve, as CSP source expressions.
 
-#: Seconds to wait for the rest of an oversize body before giving up on it.
-_DRAIN_TIMEOUT = 1.0
-
-#: Seconds a whole upload may stall. Longer than the drain timeout because this is the
-#: body we actually want, and a slow connection on a laptop is not an attack.
-_BODY_TIMEOUT = 30.0
-
-#: Bytes per read, so one stalled read cannot sit on a large declared length.
-_BODY_CHUNK = 64 * 1024
+    Collected rather than hard-coded, so adding a page that ships a script cannot
+    leave its digest out of the policy and silently cost it every enhancement.
+    """
+    return script_hash(), result_script_hash()
 
 
 def _http_status(exit_code: int) -> int:
@@ -73,40 +81,6 @@ def _http_status(exit_code: int) -> int:
     if exit_code == EXIT_ENGINE_ERROR:
         return 400
     return 200
-
-
-def _error(message: str, code: int = EXIT_ENGINE_ERROR) -> tuple[int, dict[str, Any]]:
-    """An engine error, as ``(exit_code, body)`` for :meth:`Handler._json`.
-
-    The body carries the exit code as well as the message, so a client reading JSON
-    gets the CLI contract rather than having to infer it from the HTTP status.
-    """
-    return code, {"error": message, "exit_code": code}
-
-
-def _parse_multipart(body: bytes, content_type: str) -> tuple[dict[str, str], bytes]:
-    """Fields and the file, from the raw body, with no temp file in between.
-
-    Wrapping the bytes in an email message is the stdlib's multipart parser. It is a
-    slightly odd trick and it is correct, which beats a dependency.
-    """
-    header = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode()
-    message = BytesParser(policy=HTTP).parsebytes(header + body)
-    if not message.is_multipart():
-        raise ValueError("the request is not multipart, so there is no form in it")
-
-    fields: dict[str, str] = {}
-    pdf = b""
-    for part in message.iter_parts():
-        name = part.get_param("name", header="content-disposition")
-        # ``decode=True`` gives bytes for a plain part and None for one with no
-        # payload. The cast says so, because the stdlib types cannot.
-        payload = cast(bytes, part.get_payload(decode=True) or b"")
-        if name == "pdf":
-            pdf = payload
-        else:
-            fields[str(name)] = payload.decode("utf-8", "replace").strip()
-    return fields, pdf
 
 
 def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPRequestHandler]:
@@ -311,7 +285,7 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
 
             content_type = self.headers.get("Content-Type", "")
             try:
-                fields, pdf = _parse_multipart(body, content_type)
+                fields, pdf = parse_multipart(body, content_type)
             except ValueError as exc:
                 self._json(*_error(str(exc)))
                 return None
@@ -332,13 +306,17 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
                 return
             pdf, fields = upload
 
+            carrier, terminal = fields["carrier"], fields.get("terminal", "")
+            # One branch, one runner. The two routes want different things and running
+            # both would audit the same PDF twice, which on a one-connection server means
+            # every other request waits for work nobody asked for.
+            structured = self.path == "/letter"
             try:
-                code, output = run_audit(
-                    pdf,
-                    fields["carrier"],
-                    fields.get("terminal", ""),
-                    self.path == "/audit",
-                )
+                if structured:
+                    findings = find_fn(pdf, carrier, terminal)
+                    code = findings.code
+                else:
+                    code, output = run_audit(pdf, carrier, terminal, True)
             except (BindError, KeyError, ValueError, OmittedError) as exc:
                 # Every one of these is an answer we can give a person: the document is
                 # unreadable, the carrier is one we have no clock rule for, or a
@@ -351,12 +329,10 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
                 )
                 return
 
-            if self.path == "/audit":
-                self._send(_http_status(code), output, "application/json; charset=utf-8")
+            if structured:
+                self._html(code, result_page(findings))
             else:
-                self._html(
-                    code, result_page(find_fn(pdf, fields["carrier"], fields.get("terminal", "")))
-                )
+                self._send(_http_status(code), output, "application/json; charset=utf-8")
 
     return Handler
 
