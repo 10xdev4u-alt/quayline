@@ -87,8 +87,9 @@ MISSING = [
     "runs on your own machine, and that is the honest state of it.",
     "No customer. Nobody has used this on a real account yet, so there is no recovery "
     "rate to quote and no case study.",
-    "One carrier's rates. For any other carrier the days are still recomputed and the "
-    "money is not, and the answer says so rather than guessing.",
+    "One carrier's rates. A carrier we hold a day-count rule for but no transcribed "
+    "rate still gets its days recomputed and not its money, and the answer says so. "
+    "A carrier with no day-count rule cannot be audited at all, and says that too.",
     "No filing. This finds the error and writes the letter. It does not submit to a "
     "carrier or to the FMC.",
 ]
@@ -128,7 +129,7 @@ def landing_page() -> str:
         "usually by a day or two and usually in the carrier's favour.</p>\n"
         "</div>\n"
         '<div class="proof">\n'
-        "<h2>What that looks like on one real invoice</h2>\n"
+        "<h2>The worked example, day by day</h2>\n"
         f"{rail(rail_pairs)}\n"
         f"{day_cells(strip.days)}\n"
         f"{legend()}\n"

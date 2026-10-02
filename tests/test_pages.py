@@ -18,12 +18,14 @@ is there a rule for it in the CSS that page actually ships.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
 from quayline.serve.landing import landing_document
 from quayline.web.design import stylesheet
 from quayline.web.landing_page import landing_page
+from quayline.web.render import generate
 
 #: The two pages that render components rather than prose.
 PAGES = {"intake": landing_document, "public landing": landing_page}
@@ -122,3 +124,32 @@ def test_the_two_pages_show_the_same_number_of_days() -> None:
     assert intake.count('class="day"') == landing.count('class="day"')
     assert _styled({"day"}, _stylesheet(intake))
     assert _styled({"day"}, _stylesheet(landing))
+
+
+def test_the_committed_landing_page_matches_its_generator() -> None:
+    """A generated page that is committed and stale is a page nobody regenerates.
+
+    ``web/`` is committed so the site can be served from the repository, and that is
+    exactly what makes a stale copy dangerous: the generator was fixed and the file
+    visitors get was not. It happened once in this pull request, with a section
+    rewritten in the generator and the committed file still carrying the old one.
+
+    The specimen has the same exposure and is checked the same way below.
+    """
+    committed = Path("web/index.html")
+    assert committed.is_file(), "run `make landing`; the committed page must exist"
+    assert committed.read_text(encoding="utf-8") == landing_page(), (
+        "web/index.html is out of date. Run `make landing` and commit the result. "
+        "A committed generated page that no longer matches its generator is a page "
+        "visitors get an older version of."
+    )
+
+
+def test_the_committed_specimen_matches_its_generator() -> None:
+    """Same rule, same reason, for the page that was already here."""
+    committed = Path("web/specimen.html")
+    if not committed.is_file():
+        pytest.skip("the specimen is generated on demand and is not committed here")
+    assert committed.read_text(encoding="utf-8") == generate(), (
+        "web/specimen.html is out of date. Run `make specimen` and commit the result."
+    )
