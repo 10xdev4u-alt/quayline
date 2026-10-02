@@ -152,11 +152,15 @@ button[disabled] { opacity: 0.5; cursor: progress; }
 }
 .day .n { font-size: 1.5rem; line-height: 1; }
 .day .when { font-size: 0.72rem; color: var(--slate); }
+/* Sized to the longest word, which is "disputed". A flagged day carries a marker next
+   to its number as well, so this cell is narrower than the unflagged ones and the
+   label has to fit inside it without clipping. */
 .day .state {
-  font-size: 0.66rem;
-  letter-spacing: 0.08em;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   font-weight: 700;
+  white-space: nowrap;
 }
 .day[data-state='free'] { border-color: color-mix(in srgb, var(--sea) 55%, var(--edge)); }
 .day[data-state='free'] .state { color: var(--sea); }
@@ -181,6 +185,45 @@ button[disabled] { opacity: 0.5; cursor: progress; }
 .ledger .excess { border-bottom: 0; padding-top: 0.9rem; }
 .ledger .excess dt { color: var(--signal); font-weight: 700; }
 .ledger .excess dd { font-size: clamp(1.8rem, 6vw, 2.9rem); color: var(--signal); line-height: 1; }
+
+/* The reasoning panel. It sits directly under the grid because it is the answer to the
+   question the grid raises. */
+.reason { margin-top: var(--gap-loose); border-top: 1px solid var(--edge); padding-top: var(--gap); }
+.reason-h {
+  font-family: var(--font-stencil); font-weight: var(--weight-stencil);
+  font-size: clamp(1.05rem, 2.4vw, 1.3rem); letter-spacing: -0.02em; margin: 0 0 0.4rem;
+}
+.reason-lede { color: var(--slate); max-width: var(--measure); margin: 0 0 var(--gap); }
+.discs { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.disc {
+  display: grid; gap: 0.3rem;
+  border: 1px solid var(--edge); border-left: 2px solid var(--signal);
+  background: var(--deck); padding: 0.75rem 0.9rem;
+}
+.disc-days { color: var(--signal); font-size: 0.82rem; }
+.disc-what { font-weight: 700; font-size: 0.92rem; }
+.disc-detail { color: var(--chalk); max-width: var(--measure); }
+/* The citation is the part a respondent checks, so it gets the data face and its own
+   line rather than being appended to the prose.
+
+   No prefix is added. The engine supplies a bare section on one finding and a section
+   already carrying the part name on another, and a rule that stamped the part in front
+   of both printed it twice on the second. The citation is shown exactly as the engine
+   states it, which is also the only version a reader can check against the rule book.
+   The part is named once in the panel lede instead. */
+.disc-cite { color: var(--slate); font-size: 0.8rem; }
+
+/* A day that carries a discrepancy gets a marker in the grid. The marker is a shape and
+   a border weight, not only a colour, so it survives a colour-blind reader. */
+.day[data-flagged='true'] { border-color: var(--signal); }
+.day[data-flagged='true'] .n::after {
+  content: ''; display: inline-block; width: 0.34rem; height: 0.34rem;
+  margin-left: 0.3rem; vertical-align: 0.55em;
+  background: var(--signal); border-radius: 50%;
+}
+@media (max-width: 40rem) {
+  .disc { border-left-width: 3px; }
+}
 
 .wrap { max-width: 62rem; margin: 0 auto; padding: var(--pad); }
 .bar {
@@ -236,8 +279,9 @@ code { font-family: var(--font-data); color: var(--chalk); }
 <div class="proof">
 <h2>The worked example, day by day</h2>
 <aside class="rail"><dl><div><dt class="stencil">carrier</dt><dd class="data">Maersk</dd></div><div><dt class="stencil">terminal</dt><dd class="data">Newark, NJ, dry</dd></div><div><dt class="stencil">rule</dt><dd class="data">Maersk US Newark Dry</dd></div><div><dt class="stencil">invoice date</dt><dd class="data">2026-07-20</dd></div><div><dt class="stencil">free time</dt><dd class="data">7 days</dd></div><div><dt class="stencil">disclosed end</dt><dd class="data">2026-07-07</dd></div><div><dt class="stencil">recomputed end</dt><dd class="data">2026-07-08</dd></div></dl></aside>
-<div class="days"><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">1</span><span class="when data">06-30</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">2</span><span class="when data">07-01</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">3</span><span class="when data">07-02</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">4</span><span class="when data">07-03</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">5</span><span class="when data">07-04</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">6</span><span class="when data">07-05</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">7</span><span class="when data">07-06</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">8</span><span class="when data">07-07</span><span class="state">free</span></div><div class="day" data-state="disputed" style="--accent:var(--signal)"><span class="n data">9</span><span class="when data">07-08</span><span class="state">disputed</span></div><div class="day" data-state="billed" style="--accent:var(--rust)"><span class="n data">10</span><span class="when data">07-09</span><span class="state">billed</span></div><div class="day" data-state="billed" style="--accent:var(--rust)"><span class="n data">11</span><span class="when data">07-10</span><span class="state">billed</span></div></div>
+<div class="days"><div class="day" data-state="free" data-flagged="false" style="--accent:var(--sea)"><span class="n data">1</span><span class="when data">06-30</span><span class="state">free</span></div><div class="day" data-state="free" data-flagged="false" style="--accent:var(--sea)"><span class="n data">2</span><span class="when data">07-01</span><span class="state">free</span></div><div class="day" data-state="free" data-flagged="false" style="--accent:var(--sea)"><span class="n data">3</span><span class="when data">07-02</span><span class="state">free</span></div><div class="day" data-state="free" data-flagged="false" style="--accent:var(--sea)"><span class="n data">4</span><span class="when data">07-03</span><span class="state">free</span></div><div class="day" data-state="free" data-flagged="false" style="--accent:var(--sea)"><span class="n data">5</span><span class="when data">07-04</span><span class="state">free</span></div><div class="day" data-state="free" data-flagged="false" style="--accent:var(--sea)"><span class="n data">6</span><span class="when data">07-05</span><span class="state">free</span></div><div class="day" data-state="free" data-flagged="false" style="--accent:var(--sea)"><span class="n data">7</span><span class="when data">07-06</span><span class="state">free</span></div><div class="day" data-state="free" data-flagged="true" style="--accent:var(--sea)"><span class="n data">8</span><span class="when data">07-07</span><span class="state">free</span></div><div class="day" data-state="disputed" data-flagged="true" style="--accent:var(--signal)"><span class="n data">9</span><span class="when data">07-08</span><span class="state">disputed</span></div><div class="day" data-state="billed" data-flagged="false" style="--accent:var(--rust)"><span class="n data">10</span><span class="when data">07-09</span><span class="state">billed</span></div><div class="day" data-state="billed" data-flagged="false" style="--accent:var(--rust)"><span class="n data">11</span><span class="when data">07-10</span><span class="state">billed</span></div></div>
 <p class="legend"><span><i style="border-color:var(--sea)"></i><b>free</b> inside the disclosed free time</span><span><i style="border-color:var(--rust)"></i><b>billed</b> billed by the carrier</span><span><i style="border-color:var(--signal)"></i><b>disputed</b> billed in error, this is the day</span></p>
+<section class="reason"><h2 class="reason-h">Why the engine says this</h2><p class="reason-lede">Each line is the engine's own finding, with the clause of 46 CFR Part 541 it rests on. Nothing here is written by hand, and the citations are printed exactly as the engine supplies them.</p><ul class="discs"><li class="disc"><span class="disc-days data">2026-07-08</span><span class="disc-what">the carrier billed a day that was not chargeable</span><span class="disc-detail">were charged although the stated allowance under 541.6(b)(3) exhausted on 2026-07-08</span><span class="disc-cite data">541.6(b)(8)</span></li><li class="disc"><span class="disc-days data">2026-07-07, 2026-07-08</span><span class="disc-what">the stated free time end contradicts the carrier&#x27;s own rule</span><span class="disc-detail">states the free time end as 2026-07-07, which its own start under 541.6(b)(4) and allowance under 541.6(b)(3) do not support</span><span class="disc-cite data">541.6(b)(5), 46 CFR 541.6(a)</span></li></ul></section>
 <dl class="ledger"><div><dt>billed by the carrier</dt><dd class="data">$1,170.00</dd></div><div><dt>allowed by the disclosed rule</dt><dd class="data">$780.00</dd></div><div class="excess"><dt>disputed</dt><dd class="data">$390.00</dd></div></dl>
 </div>
 <h2>Why the ninth day is the argument</h2>

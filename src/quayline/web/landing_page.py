@@ -25,6 +25,11 @@ from __future__ import annotations
 from quayline.web.design import stylesheet
 from quayline.web.example import day, example_audit, money
 from quayline.web.intake import COMPONENT_CSS, day_cells, esc, ledger, legend, rail
+from quayline.web.reasoning import (
+    DISCREPANCY_CSS,
+    days_with_findings,
+    reasoning_panel,
+)
 
 LANDING_CSS = """
 .wrap { max-width: 62rem; margin: 0 auto; padding: var(--pad); }
@@ -131,8 +136,9 @@ def landing_page() -> str:
         '<div class="proof">\n'
         "<h2>The worked example, day by day</h2>\n"
         f"{rail(rail_pairs)}\n"
-        f"{day_cells(strip.days)}\n"
+        f"{day_cells(strip.days, days_with_findings(result.day_count))}\n"
         f"{legend()}\n"
+        f"{reasoning_panel(result.day_count)}\n"
         f"{ledger(money(result.demanded_total), money(result.recomputed_total), money(result.variance))}\n"
         "</div>\n"
         "<h2>Why the ninth day is the argument</h2>\n"
@@ -176,7 +182,7 @@ def landing_page() -> str:
         f'<meta name="description" content="Recomputes a U.S. ocean demurrage or '
         f"detention invoice one day at a time, from the disclosures the carrier was "
         f'required to publish.">\n'
-        f"<style>{stylesheet()}{COMPONENT_CSS}{LANDING_CSS}</style>\n"
+        f"<style>{stylesheet()}{COMPONENT_CSS}{DISCREPANCY_CSS}{LANDING_CSS}</style>\n"
         "</head>\n"
         f"<body>\n{body}\n</body>\n"
         "</html>\n"
