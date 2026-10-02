@@ -123,7 +123,7 @@ GRID_CSS = """
   text-align: center;
   transition: border-color var(--beat) var(--ease), background var(--beat) var(--ease);
 }
-.drop[data-over='true'] { border-color: var(--signal); background: color-mix(in srgb, var(--signal) 8%, var(--deck)); }
+.drop[data-over='true'] { border-color: var(--signal); border-style: solid; background: color-mix(in srgb, var(--signal) 8%, var(--deck)); }
 .drop label { display: block; max-width: var(--measure); margin: 0 auto; color: var(--slate); }
 
 /* The file input is the one control a browser draws for itself, and its default is a
@@ -134,7 +134,7 @@ GRID_CSS = """
   width: 100%;
   margin: var(--gap) 0 0;
   padding: 0.5rem;
-  border: 1px solid var(--edge);
+  border: 1px solid var(--edge-strong);
   background: var(--quay);
   color: var(--slate);
   font-family: var(--font-data);
@@ -143,7 +143,7 @@ GRID_CSS = """
 .drop input[type='file']::file-selector-button {
   margin-right: 0.7rem;
   padding: 0.5rem 0.9rem;
-  border: 1px solid var(--edge);
+  border: 1px solid var(--edge-strong);
   background: var(--deck);
   color: var(--chalk);
   font-family: var(--font-stencil);
@@ -161,7 +161,7 @@ GRID_CSS = """
 .controls input {
   width: 100%;
   background: var(--quay);
-  border: 1px solid var(--edge);
+  border: 1px solid var(--edge-strong);
   color: var(--chalk);
   padding: 0.6rem 0.7rem;
   font-family: var(--font-data);

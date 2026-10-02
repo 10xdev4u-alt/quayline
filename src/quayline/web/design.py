@@ -42,10 +42,15 @@ TOKENS: Final[dict[str, str]] = {
     # #FFFFFF on a dark ground is what makes dashboards look cheap.
     "--chalk": "#EAEFF2",
     "--slate": "#8A9BA6",
-    # The three data states.
+    # The three data states. Rust and sea are also used as text inside a cell, so both
+    # clear 4.5:1 against --deck, not just 3:1. Rust at #D2603A was 4.19 and failed.
     "--sea": "#4FA88B",
-    "--rust": "#D2603A",
+    "--rust": "#DC7048",
     "--signal": "#E8C55A",
+    # The border on a control a person has to find and operate. --edge is a hairline
+    # between static content and is allowed to be quiet; this one is the edge of an
+    # interactive component, so it carries the 3:1 that WCAG asks of a control boundary.
+    "--edge-strong": "#66747F",
 }
 
 #: Measured steps. A flat scale keeps vertical rhythm from being argued about.
