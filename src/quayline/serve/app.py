@@ -35,8 +35,10 @@ from typing import Any, ClassVar, TextIO, cast
 from quayline.cli.exit_codes import EXIT_CLEAN, EXIT_ENGINE_ERROR
 from quayline.ingest.bind import BindError, OmittedError
 from quayline.serve.audit_runner import AuditRunner
-from quayline.serve.pages import FORM_PAGE, first_missing, letter_page, specimen_page
+from quayline.serve.landing import landing_document
+from quayline.serve.pages import first_missing, letter_page, specimen_page
 from quayline.serve.security import assert_loopback
+from quayline.web.document import script_hash
 
 #: The largest upload we accept. A carrier invoice PDF is a few hundred kilobytes, so
 #: this is generous by an order of magnitude and it exists to stop a mistake rather than
@@ -137,8 +139,15 @@ def build_handler(run_audit: AuditRunner) -> type[BaseHTTPRequestHandler]:
             # nothing to fetch. A CSP that blocked them would be a policy that breaks
             # the product to satisfy itself, and the first version of this did exactly
             # that and rendered an unstyled form.
+            #
+            # The pages also carry an inline script, for the drop target, the staged
+            # progress and the day grid reveal. It is pinned by digest rather than
+            # allowed with ``unsafe-inline``, so the policy still refuses every other
+            # script, and the digest is computed from the same constant that gets
+            # served. The page works with no script at all, so this is enhancement and
+            # not a requirement.
             self._csp = (
-                "default-src 'none'; style-src 'unsafe-inline'"
+                f"default-src 'none'; style-src 'unsafe-inline'; script-src '{script_hash()}'"
                 if content_type.startswith("text/html")
                 else "default-src 'none'"
             )
@@ -214,12 +223,12 @@ def build_handler(run_audit: AuditRunner) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:
             if self.path in ("/", "/index.html"):
-                self._html(200, FORM_PAGE)
+                self._html(200, landing_document())
                 return
             if self.path == "/specimen":
                 self._html(200, specimen_page())
                 return
-            self._not_found(self.path, "/, /audit or /letter")
+            self._not_found(self.path, "/, /specimen, /audit or /letter")
 
         def _body(self) -> bytes | None:
             """The raw request body, or ``None`` having refused it.
