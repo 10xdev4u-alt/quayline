@@ -42,6 +42,10 @@ PUBLIC_FIELDS = {
     "unfilled_fields",
     "warnings",
     "findings",
+    # Added in issue 189 so a renderer can show which days were free, chargeable and
+    # billed without recomputing them. The lock exists so that adding a field is a
+    # decision rather than an accident, and this one is recorded here.
+    "day_count",
 }
 
 

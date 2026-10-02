@@ -62,6 +62,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 
+from quayline.engine.daycount import DayCountResult
 from quayline.evidence.checklist import Ground
 from quayline.regulation.checklist import ChecklistField
 
@@ -130,6 +131,13 @@ class AuditResult:
     warnings: tuple[str, ...] = ()
 
     findings: tuple[Finding, ...] = ()
+
+    #: The per day recomputation, kept so a renderer can show which days were free,
+    #: which were chargeable and which were billed. Issue 189. ``None`` when no day
+    #: arithmetic ran, which is an export audit and nothing else, and never a
+    #: recomputation: a second implementation of the day count would be a second
+    #: chance to disagree with the engine, in front of a reader.
+    day_count: DayCountResult | None = None
 
     def __post_init__(self) -> None:
         # The three-state rule, enforced. A variance computed against a total we do

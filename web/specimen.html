@@ -83,6 +83,81 @@ li { margin:.3rem 0; }
     <tr><td>Free time expires, recomputed</td><td>2026-07-08</td></tr>
   </table></div>
 
+  <h2>The finding, day by day</h2>
+<div class="strip">
+  <style>
+.strip { margin:1.5rem 0; --free:#c9d4cc; --chg:#8a9ba8; --bill:#3f5a6b;
+  --disp:#b3541e; --disp-bg:#fdf0e6; --ink:#1a1a1a; --muted:#5c5c5c; --rule:#d8d8d8; }
+.strip h3 { font-size:1rem; margin:0 0 .5rem; letter-spacing:-.01em; }
+.ends { display:flex; flex-wrap:wrap; gap:.4rem 1.25rem; font-size:.82rem;
+  color:var(--muted); margin:0 0 .75rem; padding:0; list-style:none; }
+.ends b { color:var(--ink); font-weight:600; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(5rem,1fr));
+  gap:3px; list-style:none; padding:0; margin:0; }
+.day { border:1px solid var(--rule); border-radius:.2rem; padding:.4rem .45rem;
+  background:#fff; display:flex; flex-direction:column; gap:.1rem; min-height:4.6rem;
+  min-width:0; }
+.day .d { font:600 1rem/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:var(--ink); letter-spacing:-.02em; }
+.day .w { font-size:.7rem; letter-spacing:.05em; text-transform:uppercase;
+  color:var(--muted); }
+/* Pinned to the bottom of every cell rather than flowing after the label, so a cell
+   whose state text wraps to two lines keeps the same baseline as its neighbours and
+   the row reads as one strip instead of a ragged set of boxes. */
+.day .s { font-size:.75rem; font-weight:600; margin-top:auto;
+  overflow-wrap:anywhere; }
+.day.s-free { background:#f4f7f4; } .day.s-free .s { color:#4a6b53; }
+.day.s-chargeable { background:#f2f5f7; border-style:dashed; }
+.day.s-chargeable .s { color:#5a6d78; }
+.day.s-billed { background:#eef2f5; border-color:#9fb0bc; }
+.day.s-billed .s { color:var(--bill); }
+.day.s-disputed { background:var(--disp-bg); border:2px solid var(--disp);
+  box-shadow:inset 0 0 0 1px var(--disp-bg); }
+.day.s-disputed .s { color:var(--disp); }
+.day.s-disputed .mark { font-size:.66rem; color:var(--disp); font-weight:600;
+  letter-spacing:.02em; margin-top:.15rem; }
+.legend { display:flex; flex-wrap:wrap; gap:.35rem .9rem; font-size:.78rem;
+  margin-top:.9rem; padding:0; list-style:none; color:var(--muted); }
+.legend li { display:flex; align-items:center; gap:.3rem; }
+.sw { width:.85rem; height:.85rem; border-radius:.15rem; border:1px solid var(--rule);
+  display:inline-block; }
+.sw.s-free { background:#f4f7f4; } .sw.s-chargeable { background:#f2f5f7;
+  border-style:dashed; } .sw.s-billed { background:#eef2f5; border-color:#9fb0bc; }
+.sw.s-disputed { background:var(--disp-bg); border:2px solid var(--disp); }
+.note { font-size:.82rem; color:var(--muted); margin:.75rem 0 0; max-width:38rem; }
+.note b { color:var(--ink); }
+@media (prefers-color-scheme: dark) {
+  .strip { --free:#2a3a30; --chg:#2a3843; --bill:#8aa8bd; --disp:#e08a4e;
+    --disp-bg:#2b1a10; --ink:#e8e8e6; --muted:#9a9a97; --rule:#333; }
+  .day, .ends b, .note b { background:#1c1c20; }
+  .day.s-free { background:#182219; } .day.s-free .s { color:#8fc0a0; }
+  .day.s-chargeable { background:#1a1f24; } .day.s-chargeable .s { color:#93a8b6; }
+  .day.s-billed { background:#1d2830; } .day.s-billed .s { color:var(--bill); }
+  .day.s-disputed .s, .day.s-disputed .mark { color:var(--disp); }
+  .sw { border-color:#444; }
+  .sw.s-free { background:#182219; } .sw.s-chargeable { background:#1a1f24; }
+  .sw.s-billed { background:#1d2830; border-color:#4a5c68; }
+}
+</style>
+  <h3>Day by day, from the disclosures</h3>
+  <ul class="ends"><li>carrier states free time ends <b>2026-07-07</b></li><li>carrier inputs give <b>2026-07-08</b></li><li>day basis <b>monday saturday</b></li></ul>
+  <ul class="grid">
+      <li class="day s-free" aria-label="free" title="inside the disclosed allowance"><span class="d">30</span><span class="w">Tue</span><span class="s">free</span></li>
+      <li class="day s-free" aria-label="free" title="inside the disclosed allowance"><span class="d">1</span><span class="w">Wed</span><span class="s">free</span></li>
+      <li class="day s-free" aria-label="free" title="inside the disclosed allowance"><span class="d">2</span><span class="w">Thu</span><span class="s">free</span></li>
+      <li class="day s-free" aria-label="free" title="inside the disclosed allowance"><span class="d">3</span><span class="w">Fri</span><span class="s">free</span></li>
+      <li class="day s-free" aria-label="free" title="inside the disclosed allowance"><span class="d">4</span><span class="w">Sat</span><span class="s">free</span></li>
+      <li class="day s-free" aria-label="free" title="inside the disclosed allowance"><span class="d">5</span><span class="w">Sun</span><span class="s">free</span></li>
+      <li class="day s-free" aria-label="free" title="inside the disclosed allowance"><span class="d">6</span><span class="w">Mon</span><span class="s">free</span></li>
+      <li class="day s-free" aria-label="free" title="inside the disclosed allowance"><span class="d">7</span><span class="w">Tue</span><span class="s">free</span></li>
+      <li class="day s-disputed" aria-label="disputed" title="the carrier billed this day and free time covers it until 2026-07-08, which is what the carrier&#x27;s own start and allowance give"><span class="d">8</span><span class="w">Wed</span><span class="s">disputed</span><span class="mark">&#9650; charged anyway</span></li>
+      <li class="day s-billed" aria-label="billed" title="chargeable, and billed"><span class="d">9</span><span class="w">Thu</span><span class="s">billed</span></li>
+      <li class="day s-billed" aria-label="billed" title="chargeable, and billed"><span class="d">10</span><span class="w">Fri</span><span class="s">billed</span></li>
+  </ul>
+  <ul class="legend"><li><span class="sw s-free"></span>free</li><li><span class="sw s-chargeable"></span>chargeable</li><li><span class="sw s-billed"></span>billed</li><li><span class="sw s-disputed"></span>disputed</li></ul>
+  <p class="note"><b>2026-07-08</b> was charged while free time still covered it. Free time runs to 2026-07-08 on the carrier's own monday saturday basis, so the carrier disclosed a free time end of 2026-07-07 that their own start date and allowance do not support.</p>
+</div>
+
   <h2>Recomputation</h2>
   <p>
     The rate comes from <code>Maersk US Newark Dry</code>, transcribed from
