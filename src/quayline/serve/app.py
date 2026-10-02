@@ -34,11 +34,12 @@ from typing import Any, ClassVar, TextIO, cast
 
 from quayline.cli.exit_codes import EXIT_CLEAN, EXIT_ENGINE_ERROR
 from quayline.ingest.bind import BindError, OmittedError
-from quayline.serve.audit_runner import AuditRunner
+from quayline.serve.audit_runner import AuditRunner, FindRunner
 from quayline.serve.landing import landing_document
-from quayline.serve.pages import first_missing, letter_page, specimen_page
+from quayline.serve.pages import first_missing, specimen_page
 from quayline.serve.security import assert_loopback
 from quayline.web.document import script_hash
+from quayline.web.result import result_page
 
 #: The largest upload we accept. A carrier invoice PDF is a few hundred kilobytes, so
 #: this is generous by an order of magnitude and it exists to stop a mistake rather than
@@ -108,7 +109,7 @@ def _parse_multipart(body: bytes, content_type: str) -> tuple[dict[str, str], by
     return fields, pdf
 
 
-def build_handler(run_audit: AuditRunner) -> type[BaseHTTPRequestHandler]:
+def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPRequestHandler]:
     """The handler class. Built as a function so the tests can build their own."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -353,7 +354,9 @@ def build_handler(run_audit: AuditRunner) -> type[BaseHTTPRequestHandler]:
             if self.path == "/audit":
                 self._send(_http_status(code), output, "application/json; charset=utf-8")
             else:
-                self._html(code, letter_page(output, code))
+                self._html(
+                    code, result_page(find_fn(pdf, fields["carrier"], fields.get("terminal", "")))
+                )
 
     return Handler
 
@@ -362,12 +365,19 @@ def run_server(
     host: str,
     port: int,
     run_audit: AuditRunner,
+    find_fn: FindRunner,
     out: TextIO | None = None,
 ) -> int:  # pragma: no cover - blocking
-    """Serve until interrupted. Refuses a non-loopback host before binding."""
+    """Serve until interrupted. Refuses a non-loopback host before binding.
+
+    Two runners, because the two routes want different things. ``/audit`` has to
+    reproduce the command line exactly, so it gets the text runner that is pinned to
+    that by a test. ``/letter`` renders a page, and a page wants the objects, so it
+    gets the runner that returns them.
+    """
     assert_loopback(host)
     say = out.write if out is not None else print
-    httpd = HTTPServer((host, port), build_handler(run_audit))
+    httpd = HTTPServer((host, port), build_handler(run_audit, find_fn))
     shown = "localhost" if host in ("127.0.0.1", "localhost") else host
     say(f"Quayline intake on http://{shown}:{httpd.server_address[1]}\n")
     say("Loopback only. Nothing is stored: uploads are read and discarded.\n")

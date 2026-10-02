@@ -141,21 +141,7 @@ INTAKE_CSS = """
   font-family: var(--font-data);
   font-size: 0.82rem;
 }
-.drop input[type='file']::file-selector-button {
-  margin-right: 0.7rem;
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--edge-strong);
-  background: var(--deck);
-  color: var(--chalk);
-  font-family: var(--font-stencil);
-  font-weight: var(--weight-label);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.drop input[type='file']::file-selector-button:hover { border-color: var(--signal); color: var(--signal); }
-.controls { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: var(--gap); text-align: left; }
+.drop input[type='file']::file-selector-.drop input[type='file']::file-selector-.controls { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: var(--gap); text-align: left; }
 .controls > div { flex: 1 1 9rem; min-width: 0; }
 .controls label { display: block; margin-bottom: 0.3rem; }
 .controls input {
@@ -168,22 +154,10 @@ INTAKE_CSS = """
   font-size: 0.95rem;
 }
 .controls input:hover { border-color: var(--slate); }
-button {
-  flex: 1 1 100%;
-  background: var(--chalk);
-  color: var(--quay);
-  border: 0;
-  padding: 0.85rem 1rem;
-  font: 800 0.82rem/1 var(--font-stencil);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background var(--beat) var(--ease);
-}
-button:hover { background: var(--signal); }
-button[disabled] { opacity: 0.5; cursor: progress; }
-.foot { grid-column: 1 / -1; border-top: 1px solid var(--edge); margin-top: var(--pad); padding-top: var(--gap); color: var(--slate); max-width: var(--measure); }
-.foot p { margin: 0 0 0.7rem; }
+/* The submit takes the full width of the form. The button itself is in the base
+   sheet, because the result page has one too. */
+button { flex: 1 1 100%; }
+.foot { grid-column: 1 / -1; }
 @media (max-width: 56rem) {
   .manifest { grid-template-columns: minmax(0, 1fr); }
   .rail { order: 2; }

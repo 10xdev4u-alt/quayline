@@ -17,15 +17,17 @@ import io
 import json
 from collections.abc import Callable
 from contextlib import redirect_stdout
+from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 from quayline.cli.exit_codes import EXIT_CLEAN, EXIT_FILE_WORTHY
 from quayline.engine.audit import audit
-from quayline.evidence.packet import render
+from quayline.engine.result import AuditResult
+from quayline.evidence.packet import Packet, render
 from quayline.filing.dispute import dispute_for
-from quayline.ingest.bind import bind_ledger
+from quayline.ingest.bind import BoundLedger, bind_ledger
 from quayline.ingest.pdftext import extract_text_layer
-from quayline.web.daystrip import build_strip
+from quayline.web.daystrip import DayStrip, build_strip
 from quayline.web.strip_render import render_strip
 
 
@@ -54,16 +56,9 @@ def build_runner(
     """Build the runner from the three command line functions that render an audit."""
 
     def run(pdf: bytes, carrier: str, terminal: str, want_json: bool) -> tuple[int, str]:
-        bound = bind_ledger(extract_text_layer(pdf))
-        result = audit(
-            pdf,
-            carrier,
-            terminal,
-            resolve_disclosed(bound.rate_rule, terminal),
-            invoice_ref="",
-        )
+        bound, result = _audit(pdf, carrier, terminal, resolve_disclosed)
 
-        code = EXIT_FILE_WORTHY if result.findings else EXIT_CLEAN
+        code = EXIT_CLEAN if not result.findings else EXIT_FILE_WORTHY
         if want_json:
             payload = dict(as_json(result))
             payload["exit_code"] = code
@@ -83,4 +78,71 @@ def build_runner(
     return cast(AuditRunner, run)
 
 
-__all__ = ["AuditRunner", "build_runner"]
+class FindRunner(Protocol):
+    """Audits and returns structure. The seam the result page is rendered from."""
+
+    def __call__(self, pdf: bytes, carrier: str, terminal: str) -> Findings: ...
+
+
+__all__ = [
+    "AuditRunner",
+    "FindRunner",
+    "Findings",
+    "build_runner",
+    "find_runner",
+]
+
+
+def _audit(
+    pdf: bytes, carrier: str, terminal: str, resolve_disclosed: Callable[[str, str], Any]
+) -> tuple[BoundLedger, AuditResult]:
+    """Bind and audit. The two calls the CLI makes once it has parsed its arguments."""
+    bound = bind_ledger(extract_text_layer(pdf))
+    result = audit(
+        pdf,
+        carrier,
+        terminal,
+        resolve_disclosed(bound.rate_rule, terminal),
+        invoice_ref="",
+    )
+    return bound, result
+
+
+@dataclass(frozen=True, slots=True)
+class Findings:
+    """What the result page renders, as structure rather than as rendered text.
+
+    Issue 195. The page used to be handed the letter as a finished string and pull the
+    day strip back out of it by splitting on the literal ``<div class="strip">``, which
+    meant the page's correctness depended on the shape of markup another module
+    happened to emit. It holds the objects instead, so nothing on the page has to guess
+    at where a tag begins.
+    """
+
+    code: int
+    result: AuditResult
+    bound: BoundLedger
+    packet: Packet
+    strip: DayStrip | None
+
+
+def find_runner(resolve_disclosed: Callable[[str, str], Any]) -> FindRunner:
+    """Build the structure-returning runner the result page uses.
+
+    Separate from :func:`build_runner` on purpose. The other one has to reproduce the
+    command line byte for byte, and it is pinned to that by a test. Changing its
+    signature to return objects would break the contract that matters most, to serve a
+    page that was parsing markup to get them anyway.
+    """
+
+    def run(pdf: bytes, carrier: str, terminal: str) -> Findings:
+        bound, result = _audit(pdf, carrier, terminal, resolve_disclosed)
+        return Findings(
+            code=EXIT_CLEAN if not result.findings else EXIT_FILE_WORTHY,
+            result=result,
+            bound=bound,
+            packet=dispute_for(result),
+            strip=build_strip(result) if result.day_count is not None else None,
+        )
+
+    return run

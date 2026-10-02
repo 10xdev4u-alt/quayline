@@ -22,13 +22,33 @@ from pathlib import Path
 
 import pytest
 
+from quayline.cli.audit_render import resolve_disclosed
+from quayline.serve.audit_runner import Findings, find_runner
 from quayline.serve.landing import landing_document
+from quayline.web import result as result_module
 from quayline.web.design import stylesheet
+from quayline.web.example import FIXTURE
 from quayline.web.landing_page import landing_page
 from quayline.web.render import generate
+from quayline.web.result import result_page
 
-#: The two pages that render components rather than prose.
-PAGES = {"intake": landing_document, "public landing": landing_page}
+
+def _result_page() -> str:
+    """The result page, built from the fixture so it can be rendered in a test."""
+
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    return result_page(findings)
+
+
+#: Every page that renders components rather than prose. The result page is here for
+#: the same reason the landing page was added: it emitted a button and a footer and
+#: shipped no rule for either, because those rules turned out to be in the intake's
+#: sheet and this page correctly does not carry the intake's form.
+PAGES = {
+    "intake": landing_document,
+    "public landing": landing_page,
+    "result": _result_page,
+}
 
 
 def _classes(markup: str) -> set[str]:
@@ -153,3 +173,68 @@ def test_the_committed_specimen_matches_its_generator() -> None:
     assert committed.read_text(encoding="utf-8") == generate(), (
         "web/specimen.html is out of date. Run `make specimen` and commit the result."
     )
+
+
+def test_the_result_page_is_rendered_from_structure_not_from_rendered_markup() -> None:
+    """The page must not parse text another module already rendered.
+
+    The previous version pulled the day strip back out of the finished letter by
+    splitting on the literal ``<div class="strip">``. That made the page's correctness
+    depend on the shape of markup ``render_strip`` happened to emit, and it fails
+    silently rather than loudly.
+
+    So the guard is structural: the runner returns objects, and the page never calls a
+    renderer to get something to take apart.
+    """
+
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    assert isinstance(findings, Findings)
+    assert findings.packet.sections, "the packet carries structure the page can read"
+    assert findings.strip is not None and findings.strip.days
+
+    source = Path(result_module.__file__).read_text(encoding="utf-8")
+    for forbidden in ("render_strip", "render(dispute_for", "partition('<div class=\"strip\"'>"):
+        assert forbidden not in source, f"the result page must not use {forbidden}"
+
+
+def test_a_blocked_ground_is_shown_as_blocked_rather_than_omitted() -> None:
+    """A ground that vanishes is the failure this whole module exists to prevent.
+
+    A carrier's respondent decides what they can concede. A ground silently missing
+    from the packet is a claim lost without anyone being told, and it surfaces eleven
+    weeks later when the claim is time barred.
+    """
+
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    page = result_page(findings)
+    assert page.count('class="section"') == len(findings.packet.sections), (
+        "one section per ground, so a blocked ground is still on the page"
+    )
+    blocked = [s for s in findings.packet.sections if s.blocked]
+    assert blocked, "the fixture has a blocked ground, which is the case worth testing"
+    for section in blocked:
+        assert section.reason in page, "and the reason it is blocked is stated"
+    assert "needs evidence" in page
+
+
+def test_the_result_page_states_what_the_reader_must_do_next() -> None:
+    """An empty screen is an invitation to act. This one has to tell them what."""
+
+    page = result_page(find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark"))
+    assert "What to do next" in page
+    assert "Send the letter" in page
+    assert 'id="copy"' in page, "the letter can be copied in one action"
+
+
+def test_the_letter_is_readable_without_javascript() -> None:
+    """The copy button is an enhancement over a textarea that already holds the text.
+
+    A reader with scripting blocked must still be able to read the letter and select
+    it by hand, which is what makes the button safe to offer at all.
+    """
+
+    findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
+    page = result_page(findings)
+    assert "<script" not in page.lower(), "this page needs no script"
+    assert "<textarea" in page and "readonly" in page
+    assert "Dispute of charges" in page

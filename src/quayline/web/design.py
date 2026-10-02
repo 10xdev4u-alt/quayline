@@ -152,6 +152,34 @@ h1 {
 a { color: var(--signal); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 a:hover { color: var(--chalk); }
 
+/* Buttons live in the base sheet because two different pages have one and neither
+   owns it. They were intake-only until the result page shipped and then came out
+   unstyled, which is the same class of bug as a component emitted with no rule. */
+button {
+  background: var(--chalk);
+  color: var(--quay);
+  border: 1px solid var(--chalk);
+  padding: 0.7rem 1.1rem;
+  font-family: var(--font-stencil);
+  font-weight: var(--weight-label);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--beat) var(--ease), color var(--beat) var(--ease),
+    border-color var(--beat) var(--ease);
+}
+button:hover { background: var(--signal); border-color: var(--signal); color: var(--quay); }
+button[disabled] { opacity: 0.5; cursor: progress; }
+
+/* The page shell every single-column page uses. */
+.wrap { max-width: 62rem; margin: 0 auto; padding: var(--pad); }
+
+/* The footer every page carries. In the base sheet because three pages have one. */
+.foot { border-top: 1px solid var(--edge); margin-top: var(--pad); padding-top: var(--gap);
+  color: var(--slate); max-width: var(--measure); }
+.foot p { margin: 0 0 0.7rem; }
+
 /* Focus is a rectangle, not a glow. A glow on a dark ground disappears at the edges
    where it matters. */
 :focus-visible {
