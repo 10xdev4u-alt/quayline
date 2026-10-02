@@ -102,6 +102,10 @@ class DayCountResult:
 
     carrier: str
     terminal: str
+    #: When free time starts, as stated. Added in issue 189 so a renderer can draw
+    #: every day of the stay rather than deriving the start by counting backwards
+    #: from the first chargeable day, which is a guess.
+    free_time_start: date
     declared_free_time_end: date
     recomputed_free_time_end: date
     expected_dates: tuple[date, ...]
@@ -268,6 +272,7 @@ def recompute(
     return DayCountResult(
         carrier=carrier,
         terminal=terminal,
+        free_time_start=disclosures.free_time_start,
         declared_free_time_end=disclosures.free_time_end,
         recomputed_free_time_end=recomputed_end,
         expected_dates=tuple(sorted(expected)),

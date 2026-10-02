@@ -35,13 +35,14 @@ them, and that we do not infer ours from them. None has been measured.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import KW_ONLY, dataclass
 from decimal import Decimal
 from pathlib import Path
 
 from quayline.calendars.day_basis import RULES as DAY_BASIS_RULES
 from quayline.cli.coverage_cmd import build_rows
 from quayline.engine.audit import audit
+from quayline.engine.result import AuditResult
 from quayline.ingest.bind import BoundLedger, bind_ledger
 from quayline.ingest.pdftext import extract_text_layer
 from quayline.regulation import Trade
@@ -122,6 +123,12 @@ class Specimen:
     research_links: tuple[ResearchLink, ...]
     coverage: tuple[tuple[str, str, int, bool], ...]
 
+    _unused: KW_ONLY
+    #: The audit itself, so a renderer can draw the day strip from the day result the
+    #: engine computed rather than recomputing it. A second day count would be a
+    #: second chance to disagree, in front of a reader.
+    audit_result: AuditResult | None = None
+
     @property
     def verified_count(self) -> int:
         return sum(1 for d in self.disclosures if d.verification == VERIFIED)
@@ -168,15 +175,15 @@ def _disclosures(bound: BoundLedger) -> tuple[Disclosure, ...]:
     might well state it. We did not look, so we do not claim to have looked.
     """
     rows: list[Disclosure] = []
-    for field in required_for(Trade.IMPORT):
-        field_name = _CITE_TO_FIELD.get(field.cite)
+    for clause in required_for(Trade.IMPORT):
+        field_name = _CITE_TO_FIELD.get(clause.cite)
         if field_name is None:
             rows.append(
                 Disclosure(
-                    cite=field.cite,
-                    heading=field.heading,
-                    group=field.group,
-                    text=field.statement,
+                    cite=clause.cite,
+                    heading=clause.heading,
+                    group=clause.group,
+                    text=clause.statement,
                     verification=NOT_CHECKED,
                 )
             )
@@ -184,10 +191,10 @@ def _disclosures(bound: BoundLedger) -> tuple[Disclosure, ...]:
         value = _value_of(field_name, bound)
         rows.append(
             Disclosure(
-                cite=field.cite,
-                heading=field.heading,
-                group=field.group,
-                text=field.statement,
+                cite=clause.cite,
+                heading=clause.heading,
+                group=clause.group,
+                text=clause.statement,
                 verification=VERIFIED if value else ABSENT,
                 value=value,
             )
@@ -252,6 +259,7 @@ def build_specimen(carrier: str = FIXTURE_CARRIER, terminal: str = FIXTURE_TERMI
         tariff_rate=f"{resolution.block.price(result.computed_charge_days or 0):.2f}",
         tariff_source=resolution.block.source,
         tariff_effective_from=resolution.block.effective_from,
+        audit_result=result,
         disclosures=_disclosures(bound),
         findings=tuple(Finding(f.code, f.cite, f.summary) for f in result.findings),
         research_links=_RESEARCH_LINKS,

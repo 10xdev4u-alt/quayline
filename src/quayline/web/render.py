@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from html import escape
 
+from quayline.web.daystrip import build_strip
 from quayline.web.specimen import ABSENT, VERIFIED, Specimen, build_specimen
+from quayline.web.strip_render import render_strip
 
 _STYLE = """
 :root { --ink:#1a1a1a; --muted:#5c5c5c; --rule:#d8d8d8; --bg:#fbfbf9;
@@ -89,6 +91,18 @@ def _disclosure_table(spec: Specimen) -> str:
         for d in spec.disclosures
     ]
     return "\n".join(rows)
+
+
+def _strip_section(spec: Specimen) -> str:
+    """The day strip, when the audit produced one.
+
+    An export audit runs no day arithmetic, so there is nothing to draw. The section
+    disappears rather than rendering an empty strip, because a strip with no days on
+    it reads as a broken chart rather than as an absence.
+    """
+    if spec.audit_result is None or spec.audit_result.day_count is None:
+        return ""
+    return render_strip(build_strip(spec.audit_result))
 
 
 def _recomputation_table(spec: Specimen) -> str:
@@ -201,6 +215,8 @@ def render_specimen(spec: Specimen) -> str:
     <tr><td>Free time expires, recomputed</td><td>{escape(spec.free_time_expires)}</td></tr>
   </table></div>
 
+  <h2>The finding, day by day</h2>
+{_strip_section(spec)}
   <h2>Recomputation</h2>
   <p>
     The rate comes from <code>{escape(spec.tariff_rule)}</code>, transcribed from

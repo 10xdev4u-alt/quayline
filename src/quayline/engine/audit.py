@@ -238,6 +238,7 @@ def audit(
         computed_free_time_expiry=computed.recomputed_free_time_end,
         computed_charge_days=len(computed.expected_dates),
         findings=ordered,
+        day_count=computed,
     )
 
 
