@@ -26,7 +26,8 @@ import hashlib
 
 from quayline.web.design import stylesheet
 from quayline.web.intake import (
-    GRID_CSS,
+    COMPONENT_CSS,
+    INTAKE_CSS,
     day_cells,
     esc,
     ledger,
@@ -153,7 +154,7 @@ def _document(body: str, title: str, extra_style: str = "") -> str:
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{esc(title)}</title>\n"
-        f"<style>{stylesheet()}{GRID_CSS}{extra_style}</style>\n"
+        f"<style>{stylesheet()}{COMPONENT_CSS}{INTAKE_CSS}{extra_style}</style>\n"
         "</head>\n"
         f"<body>\n{body}\n</body>\n"
         "</html>\n"

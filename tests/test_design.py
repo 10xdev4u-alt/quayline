@@ -16,10 +16,19 @@ from pathlib import Path
 
 import pytest
 
-from quayline.serve.landing import example_audit, landing_document
+from quayline.serve.landing import landing_document
 from quayline.web.design import BASE_CSS, TOKENS, stylesheet
 from quayline.web.document import SCRIPT, intake_document, script_hash
-from quayline.web.intake import GRID_CSS, STATE_ACCENT, day_cells, ledger, legend
+from quayline.web.example import example_audit, money
+from quayline.web.intake import (
+    COMPONENT_CSS,
+    INTAKE_CSS,
+    STATE_ACCENT,
+    day_cells,
+    ledger,
+    legend,
+)
+from quayline.web.landing_page import landing_page
 
 #: billed, allowed, excess. The fixture's real figures, in the order a reader meets them.
 MONEY = ("$1,170.00", "$780.00", "$390.00")
@@ -73,7 +82,7 @@ def test_the_stylesheet_is_parseable_css_and_not_escaped_braces() -> None:
     a single doubled brace renders an unstyled page that still contains a ``<style>``
     tag. This is the exact bug that shipped once.
     """
-    css = stylesheet() + GRID_CSS
+    css = stylesheet() + COMPONENT_CSS + INTAKE_CSS
     assert "{{" not in css and "}}" not in css
     assert css.count("{") == css.count("}"), "unbalanced rule bodies"
     for name in TOKENS:
@@ -154,8 +163,8 @@ def test_every_day_cell_names_its_state_so_colour_is_never_load_bearing() -> Non
 
 def test_the_excess_is_the_largest_number_on_the_page() -> None:
     """The whole reason anyone is looking. CSS is asserted, not eyeballed."""
-    assert ".ledger .excess dd" in GRID_CSS
-    rule = GRID_CSS.split(".ledger .excess dd {")[1].split("}")[0]
+    assert ".ledger .excess dd" in COMPONENT_CSS
+    rule = COMPONENT_CSS.split(".ledger .excess dd {")[1].split("}")[0]
     sizes = [float(n) for n in re.findall(r"(\d+(?:\.\d+)?)rem", rule)]
     assert sizes, "the excess figure needs to be sized in rem"
     assert max(sizes) >= 1.8, f"expected a large display size, found {sizes}"
@@ -228,3 +237,51 @@ def test_the_landing_page_money_comes_off_the_engine_and_not_a_template() -> Non
         "the grid is the strip, so its length is the strip's length"
     )
     assert "not a client" in page.lower()
+
+
+def test_the_public_landing_page_is_generated_from_the_same_example() -> None:
+    """Two pages showing the same proof must not be able to disagree.
+
+    The landing page and the intake both lead with a day grid. If either computed its
+    own, one of them would eventually show a figure the engine no longer produces, and
+    that page would be the one a stranger reads first.
+    """
+    strip, result, _rail = example_audit()
+    page = landing_page()
+    assert page.count('class="day"') == len(strip.days)
+    assert money(result.variance) in page
+    assert money(result.demanded_total) in page
+    assert money(result.recomputed_total) in page
+
+
+def test_the_landing_page_states_what_it_does_not_do() -> None:
+    """The half of the page a reader skims is the half that has to be true.
+
+    A landing page that only lists strengths is indistinguishable from one making
+    things up. This asserts the absences are named, not just the capabilities.
+    """
+    page = landing_page().lower()
+    for admission in (
+        "no hosted version",
+        "no customer",
+        "does not submit",
+        "not a client",
+        "one carrier",
+    ):
+        assert admission in page, f"the page never says: {admission}"
+
+
+def test_the_landing_page_explains_the_problem_without_prior_knowledge() -> None:
+    """The first two sentences have to carry a stranger.
+
+    Jargon in the opening paragraph is the difference between a page that explains the
+    problem and one that assumes the reader already has the problem.
+    """
+    page = landing_page()
+    opening = page.split("<h1>", 1)[1].split("</div>", 1)[0]
+    assert "demurrage" in opening.lower()
+    assert "detention" in opening.lower()
+    # The regulation can be named in the first screen, but it cannot be the subject of
+    # the first screen. A reader who does not know what a container charge is will not
+    # know what Part 541 is for.
+    assert "part 541" not in opening.lower()

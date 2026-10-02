@@ -16,7 +16,7 @@ import re
 import pytest
 
 from quayline.web.design import BASE_CSS, MOTION, SPACE, TOKENS
-from quayline.web.intake import GRID_CSS as GRID_CSS_SRC
+from quayline.web.intake import COMPONENT_CSS as GRID_CSS_SRC
 
 #: The two grounds the palette sits on.
 GROUND = {"quay": TOKENS["--quay"], "deck": TOKENS["--deck"]}

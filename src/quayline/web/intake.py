@@ -35,17 +35,11 @@ STATE_WORD: dict[str, str] = {
     "disputed": "disputed",
 }
 
-GRID_CSS = """
-.manifest {
-  display: grid;
-  grid-template-columns: var(--rail) minmax(0, 1fr);
-  gap: var(--gap-loose);
-  align-items: start;
-  max-width: 78rem;
-  margin: 0 auto;
-  padding: var(--pad);
-}
-
+#: The components both pages show: the rail, the day grid, the legend and the ledger.
+#: Split out from the intake-only layout because the public landing page borrows these
+#: and nothing else, and a page shipping rules it never emits carries dead weight
+#: silently. ``tests/test_pages.py`` asserts both directions.
+COMPONENT_CSS = """
 /* The rail is the SHIPPER / CONSIGNEE block of a bill of lading: bordered, labelled,
    stacked. Every value in it comes off the document or out of the engine. */
 .rail { border: 1px solid var(--edge); background: var(--deck); }
@@ -54,20 +48,6 @@ GRID_CSS = """
 .rail div:last-child { border-bottom: 0; }
 .rail dt { margin: 0 0 0.2rem; }
 .rail dd { margin: 0; font-size: 0.95rem; word-break: break-word; }
-
-.head {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap);
-  align-items: baseline;
-  justify-content: space-between;
-  padding-bottom: var(--gap-tight);
-  border-bottom: 1px solid var(--edge);
-}
-
-.lede { max-width: var(--measure); color: var(--slate); margin: 0 0 var(--gap-loose); }
-
 /* The grid. One cell per day, laid out as a track that wraps. Each cell states its own
    day number and date, so the grid is readable with the colour stripped out. */
 .days { display: grid; grid-template-columns: repeat(auto-fit, minmax(4.1rem, 1fr)); gap: 0.4rem; }
@@ -100,11 +80,9 @@ GRID_CSS = """
   box-shadow: inset 0 0 0 1px var(--signal);
 }
 .day[data-state='disputed'] .state { color: var(--signal); }
-
 .legend { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: 0.6rem; }
 .legend span { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--slate); }
 .legend i { width: 0.7rem; height: 0.7rem; border: 1px solid; display: inline-block; }
-
 /* The money. The excess is the largest number on the page because it is the reason
    anyone is here. */
 .ledger { display: grid; gap: 0.15rem; margin: var(--gap-loose) 0 0; padding: 0; border: 0; }
@@ -114,7 +92,31 @@ GRID_CSS = """
 .ledger .excess { border-bottom: 0; padding-top: 0.9rem; }
 .ledger .excess dt { color: var(--signal); font-weight: 700; }
 .ledger .excess dd { font-size: clamp(1.8rem, 6vw, 2.9rem); color: var(--signal); line-height: 1; }
+"""
 
+#: The intake only: its two column manifest, the lede and the upload form. The landing
+#: page has a single column wrap and no form, so it ships neither.
+INTAKE_CSS = """
+.manifest {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  gap: var(--gap-loose);
+  align-items: start;
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: var(--pad);
+}
+.head {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: var(--gap-tight);
+  border-bottom: 1px solid var(--edge);
+}
+.lede { max-width: var(--measure); color: var(--slate); margin: 0 0 var(--gap-loose); }
 .drop {
   margin-top: var(--gap-loose);
   border: 1px dashed var(--edge);
@@ -125,7 +127,6 @@ GRID_CSS = """
 }
 .drop[data-over='true'] { border-color: var(--signal); border-style: solid; background: color-mix(in srgb, var(--signal) 8%, var(--deck)); }
 .drop label { display: block; max-width: var(--measure); margin: 0 auto; color: var(--slate); }
-
 /* The file input is the one control a browser draws for itself, and its default is a
    grey chrome button that looks broken on a dark ground. The button is restyled and the
    filename is given the data face so a carrier invoice number lines up. */
@@ -154,7 +155,6 @@ GRID_CSS = """
   cursor: pointer;
 }
 .drop input[type='file']::file-selector-button:hover { border-color: var(--signal); color: var(--signal); }
-
 .controls { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: var(--gap); text-align: left; }
 .controls > div { flex: 1 1 9rem; min-width: 0; }
 .controls label { display: block; margin-bottom: 0.3rem; }
@@ -182,10 +182,8 @@ button {
 }
 button:hover { background: var(--signal); }
 button[disabled] { opacity: 0.5; cursor: progress; }
-
 .foot { grid-column: 1 / -1; border-top: 1px solid var(--edge); margin-top: var(--pad); padding-top: var(--gap); color: var(--slate); max-width: var(--measure); }
 .foot p { margin: 0 0 0.7rem; }
-
 @media (max-width: 56rem) {
   .manifest { grid-template-columns: minmax(0, 1fr); }
   .rail { order: 2; }
@@ -257,7 +255,8 @@ def ledger(billed: str, allowed: str, excess: str) -> str:
 
 
 __all__ = [
-    "GRID_CSS",
+    "COMPONENT_CSS",
+    "INTAKE_CSS",
     "STATE_ACCENT",
     "STATE_WORD",
     "day_cells",
