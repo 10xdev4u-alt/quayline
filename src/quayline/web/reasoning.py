@@ -43,9 +43,16 @@ from quayline.engine.daycount import Discrepancy
 from quayline.web.intake import esc
 
 #: What each direction means to the person who receives the letter. Enum names are for
-#: us. The four entries below are the only words this module adds to the engine's output.
+#: us. The three entries below are the only words this module adds to the engine's output.
+#:
+#: Deliberately category level, not mechanism level. ``OVERBILLED`` covers two different
+#: faults: a day inside the free-time allowance, and a day after it that the carrier's own
+#: day unit excludes. The first draft said "free time covers", which is false for the
+#: second, and that is the kind of sentence this project cannot ship. The specific reason
+#: is always in ``item.detail``, which is the engine's, and this line only says what kind
+#: of thing happened.
 DIRECTION_WORD: dict[str, str] = {
-    "overbilled": "the carrier billed a day that free time covers",
+    "overbilled": "the carrier billed a day that was not chargeable",
     "stated_versus_recomputed": "the stated free time end contradicts the carrier's own rule",
     "underbilled": "the carrier billed less than the rule allows",
 }
@@ -115,7 +122,8 @@ def reasoning_panel(day_count: Any) -> str:
         '<section class="reason">'
         '<h2 class="reason-h">Why the engine says this</h2>'
         '<p class="reason-lede">Each line is the engine\'s own finding, with the clause '
-        "it rests on. Nothing here is written by hand.</p>"
+        "of 46 CFR Part 541 it rests on. Nothing here is written by hand, and the "
+        "citations are printed exactly as the engine supplies them.</p>"
         f'<ul class="discs">{rows}</ul>'
         "</section>"
     )
@@ -140,9 +148,14 @@ DISCREPANCY_CSS = """
 .disc-what { font-weight: 700; font-size: 0.92rem; }
 .disc-detail { color: var(--chalk); max-width: var(--measure); }
 /* The citation is the part a respondent checks, so it gets the data face and its own
-   line rather than being appended to the prose. */
+   line rather than being appended to the prose.
+
+   No prefix is added. The engine supplies a bare section on one finding and a section
+   already carrying the part name on another, and a rule that stamped the part in front
+   of both printed it twice on the second. The citation is shown exactly as the engine
+   states it, which is also the only version a reader can check against the rule book.
+   The part is named once in the panel lede instead. */
 .disc-cite { color: var(--slate); font-size: 0.8rem; }
-.disc-cite::before { content: '46 CFR '; color: var(--slate); }
 
 /* A day that carries a discrepancy gets a marker in the grid. The marker is a shape and
    a border weight, not only a colour, so it survives a colour-blind reader. */

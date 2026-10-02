@@ -382,3 +382,39 @@ def test_the_reasoning_survives_with_scripting_blocked() -> None:
         page = build()
         panel = page.split('class="reason"', 1)[1] if 'class="reason"' in page else ""
         assert "541.6(b)(8)" in panel or "541." in panel, f"{name} inlines the clause"
+
+
+def test_a_citation_is_never_prefixed_into_a_doubled_string() -> None:
+    """The engine prints some citations bare and some with the part named.
+
+    ``541.6(b)(8)`` and ``541.6(b)(5), 46 CFR 541.6(a)`` both occur on the fixture. A
+    rule that stamped ``46 CFR`` in front of every citation rendered the second one as
+    "46 CFR 46 CFR 541.6(a)", and the requirement is that the citation reads as supplied.
+
+    The part is named once in the panel's lede instead, which is true for both shapes.
+    """
+    for name, build in PAGES.items():
+        page = build()
+        cites = re.findall(r'class="disc-cite[^"]*"[^>]*>([^<]+)<', page)
+        assert cites, f"{name} cites nothing"
+        for cite in cites:
+            assert "46 CFR 46 CFR" not in cite, f"{name} doubled the part: {cite!r}"
+            assert cite.strip(), "an empty citation is not a citation"
+        assert "46 CFR Part 541" in page, f"{name} names the part the clauses belong to"
+
+
+def test_the_direction_wording_does_not_assert_a_mechanism() -> None:
+    """``OVERBILLED`` covers two faults and the label may only name the category.
+
+    A day inside the allowance, and a day after it that the carrier's own day unit
+    excludes, both report ``OVERBILLED``. The first draft of this label said "free time
+    covers", which is false for the second. The specific reason belongs in the engine's
+    ``detail``; the direction line says what kind of thing happened and stops there.
+    """
+    for direction, wording in DIRECTION_WORD.items():
+        for mechanism in ("free time covers", "inside free time", "within the allowance"):
+            assert mechanism not in wording, (
+                f"{direction} is labelled {wording!r}, which asserts a mechanism the "
+                f"engine does not always report"
+            )
+    assert DIRECTION_WORD["overbilled"] == "the carrier billed a day that was not chargeable"
