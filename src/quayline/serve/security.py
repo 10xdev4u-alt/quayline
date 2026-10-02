@@ -19,6 +19,14 @@ anyone would want to widen it is to demo it from a laptop on hotel wifi, which i
 exactly the situation where the port is scanned within minutes. Refusing loudly is
 cheaper than the incident.
 
+Why a name is resolved rather than passed through
+
+``assert_loopback`` returns a literal address, never a name. Handing a name to the bind
+would mean a DNS answer at bind time that can differ from the answer just checked. On a
+machine whose ``/etc/hosts`` points ``localhost`` at a routable address, the check would
+pass and the server would answer on the network. So the name is resolved once, every
+address it resolves to is verified, and the literal is what gets bound.
+
 What it costs to actually host this
 
 Written down so the next person knows the shape of the work rather than assuming it is
@@ -31,41 +39,102 @@ that milestone.
 from __future__ import annotations
 
 import ipaddress
+import socket
+from collections.abc import Callable
 
-#: Hosts we will bind. Loopback in both families, plus the two names that resolve to it.
+#: Hosts we will bind, by name. A name is only accepted when it is on this list.
 _LOOPBACK_NAMES = frozenset({"localhost", "localhost.localdomain"})
+
+#: Given a name, the addresses it resolves to. Injectable so a test can decide what
+#: ``localhost`` means without editing ``/etc/hosts``.
+Resolver = Callable[[str], "list[str]"]
+
+#: ``ipaddress.version`` for IPv4. Spelled out because the literal trips the magic value
+#: rule and the constant costs nothing.
+IPV4 = 4
 
 
 class BindRefusedError(PermissionError):
     """The requested interface is not loopback, and this tool will not serve on it."""
 
 
-def assert_loopback(host: str) -> str:
-    """Return ``host`` if it is loopback, refuse it otherwise.
+def _system_resolver(name: str) -> list[str]:
+    """What the machine resolves ``name`` to, IPv4 first.
 
-    Accepts a name or a literal. A name is only accepted when it is one of the known
-    loopback names, because resolving it would mean a DNS answer at startup and a DNS
-    answer can change between the check and the bind.
+    Ordered IPv4 first because ``HTTPServer`` is an ``AF_INET`` socket. Returning ``::1``
+    here would satisfy every security check and then fail the bind with
+    ``Address family for hostname not supported``, which is a confusing way to learn that
+    the resolver and the socket disagree. Both answers are still verified as loopback.
     """
-    candidate = host.strip().lower()
-    if candidate in _LOOPBACK_NAMES:
-        return candidate
-    try:
-        address = ipaddress.ip_address(candidate)
-    except ValueError as exc:
-        raise BindRefusedError(
-            f"refusing to bind {host!r}: it is neither a loopback address nor a "
-            f"loopback name ({', '.join(sorted(_LOOPBACK_NAMES))}). This intake "
-            f"holds a client's container number and a disputed amount and has no "
-            f"authentication, so it serves on loopback only."
-        ) from exc
+    infos = socket.getaddrinfo(name, None, type=socket.SOCK_STREAM)
+    found = [str(info[4][0]) for info in infos]
+
+    def rank(address: str) -> int:
+        return 0 if ipaddress.ip_address(address).version == IPV4 else 1
+
+    return sorted(found, key=rank)
+
+
+def _bind_literal(host: str) -> str:
+    """Return ``host`` if it is already a loopback literal."""
+    address = ipaddress.ip_address(host)
     if not address.is_loopback:
         raise BindRefusedError(
             f"refusing to bind {host!r}: {address} is routable. This intake holds a "
             f"client's container number and a disputed amount and has no "
             f"authentication, so it serves on loopback only."
         )
-    return candidate
+    return host
 
 
-__all__ = ["BindRefusedError", "assert_loopback"]
+def assert_loopback(host: str, resolver: Resolver | None = None) -> str:
+    """Return a literal loopback address to bind, or refuse.
+
+    Returns an address, never a name, and that is the whole point. Passing a name on to
+    the bind reintroduces the DNS answer this function exists to avoid: the answer could
+    differ from the one just checked, or point somewhere routable. On a machine whose
+    ``/etc/hosts`` maps ``localhost`` at a routable address, a name would be checked as
+    loopback and bound somewhere a network can reach.
+
+    So a name is resolved here, every address it resolves to is verified as loopback,
+    and the literal is what comes back. The check and the bind cannot disagree.
+    """
+    candidate = host.strip().lower()
+    try:
+        return _bind_literal(candidate)
+    except ValueError:
+        pass  # not a literal, so it may be a name
+
+    if candidate not in _LOOPBACK_NAMES:
+        raise BindRefusedError(
+            f"refusing to bind {host!r}: it is neither a loopback address nor a "
+            f"loopback name ({', '.join(sorted(_LOOPBACK_NAMES))}). This intake "
+            f"holds a client's container number and a disputed amount and has no "
+            f"authentication, so it serves on loopback only."
+        )
+
+    resolved = (resolver or _system_resolver)(candidate)
+    if not resolved:
+        raise BindRefusedError(
+            f"refusing to bind {host!r}: it resolved to no address at all. An unbound "
+            f"name cannot be shown to be loopback."
+        )
+    for address in resolved:
+        try:
+            _bind_literal(address)
+        except ValueError as exc:
+            raise BindRefusedError(
+                f"refusing to bind {host!r}: it resolved to {address}, which is not "
+                f"an address this tool will bind."
+            ) from exc
+        except BindRefusedError as exc:
+            raise BindRefusedError(
+                f"refusing to bind {host!r}: it resolved to {address}, which is "
+                f"routable. This intake holds a client's container number and a "
+                f"disputed amount and has no authentication, so it serves on loopback "
+                f"only."
+            ) from exc
+    return resolved[0]
+
+
+__all__ = ["BindRefusedError", "Resolver", "assert_loopback"]

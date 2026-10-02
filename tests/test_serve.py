@@ -15,6 +15,7 @@ in the issue and repeated in the module docstring and on the startup line.
 from __future__ import annotations
 
 import io
+import ipaddress
 import json
 import threading
 import urllib.error
@@ -97,7 +98,68 @@ def test_it_refuses_any_bind_that_is_not_loopback() -> None:
 def test_loopback_is_accepted_in_every_form_it_takes() -> None:
     """IPv4 and IPv6 loopback, and the two spellings of the v4 one."""
     for host in ("127.0.0.1", "localhost", "::1", "127.0.1.1"):
-        assert_loopback(host)
+        assert ipaddress.ip_address(assert_loopback(host))
+
+
+def test_a_name_binds_as_a_literal_so_the_check_and_the_bind_cannot_disagree() -> None:
+    """``assert_loopback`` returns an address, never a name.
+
+    A name handed to the bind is a DNS answer taken a second after the check. On a
+    machine whose hosts file points ``localhost`` at a routable address the check passes
+    and the server answers on the network, which is the one outcome this module exists
+    to prevent. So the name is resolved here and the literal is what comes back.
+    """
+    for host in ("localhost", "127.0.0.1", "::1", "127.0.1.1"):
+        bound = assert_loopback(host)
+        assert ipaddress.ip_address(bound), f"{host!r} bound as a name, not an address"
+
+
+def test_a_name_that_resolves_off_loopback_is_refused() -> None:
+    """The gap that review caught: a name whose answer is routable must not bind.
+
+    ``/etc/hosts`` cannot be edited from a test, so the resolver is injected. Without
+    this there is no way to prove the check holds for the answer the machine would
+    actually give, which is the only answer that matters.
+    """
+
+    def to_a_routable_address(_name: str) -> list[str]:
+        return ["192.168.1.10"]
+
+    with pytest.raises(BindRefusedError) as caught:
+        assert_loopback("localhost", resolver=to_a_routable_address)
+    assert "192.168.1.10" in str(caught.value), "the answer should be named"
+
+
+def test_a_name_that_resolves_to_nothing_is_refused() -> None:
+    def to_nothing(_name: str) -> list[str]:
+        return []
+
+    with pytest.raises(BindRefusedError):
+        assert_loopback("localhost", resolver=to_nothing)
+
+
+def test_a_name_resolving_to_both_families_binds_the_first_loopback() -> None:
+    def to_both_families(_name: str) -> list[str]:
+        return ["127.0.0.1", "::1"]
+
+    assert assert_loopback("localhost", resolver=to_both_families) == "127.0.0.1"
+
+
+def test_a_resolved_name_binds_on_a_real_socket() -> None:
+    """The name has to resolve to something ``HTTPServer`` can actually bind.
+
+    ``HTTPServer`` is an ``AF_INET`` socket. A resolver that handed back ``::1`` first
+    would pass every security check and then fail the bind with ``Address family for
+    hostname not supported``. That is how this was briefly broken, and it looks like a
+    security module refusing to serve rather than a resolver disagreeing with a socket.
+    """
+    for host in ("localhost", "localhost.localdomain", "127.0.0.1"):
+        address = assert_loopback(host)
+        httpd = HTTPServer((address, 0), build_handler(build_runner()))
+        try:
+            assert httpd.server_address[0] == address
+        finally:
+            httpd.server_close()
 
 
 def test_a_refused_bind_names_the_host_it_refused() -> None:
