@@ -29,7 +29,8 @@ from uuid import uuid4
 import pytest
 
 from quayline.cli.audit_cmd import EXIT_ENGINE_ERROR, EXIT_FILE_WORTHY, main
-from quayline.cli.serve_cmd import build_runner
+from quayline.cli.audit_render import resolve_disclosed
+from quayline.cli.serve_cmd import build_runner, find_runner
 from quayline.serve import app as serve_app
 from quayline.serve.app import MAX_UPLOAD_BYTES, build_handler
 from quayline.serve.pages import letter_page
@@ -42,7 +43,7 @@ FIXTURE = Path("tests/fixtures/born_digital_invoice.pdf")
 @pytest.fixture(scope="module")
 def server() -> Iterator[str]:
     """A real server on a real port, so the tests exercise the socket not a stub."""
-    handler = build_handler(build_runner())
+    handler = build_handler(build_runner(), find_runner(resolve_disclosed))
     httpd = HTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -157,7 +158,9 @@ def test_a_resolved_name_binds_on_a_real_socket() -> None:
     """
     for host in ("localhost", "localhost.localdomain", "127.0.0.1"):
         address = assert_loopback(host)
-        httpd = HTTPServer((address, 0), build_handler(build_runner()))
+        httpd = HTTPServer(
+            (address, 0), build_handler(build_runner(), find_runner(resolve_disclosed))
+        )
         try:
             assert httpd.server_address[0] == address
         finally:
@@ -377,9 +380,13 @@ def test_the_letter_endpoint_returns_the_rendered_packet(server: str) -> None:
         FIXTURE.read_bytes(),
     )
 
+    # The page renders the packet as structure rather than as one preformatted blob,
+    # so each ground appears as its own section carrying its own stake.
     assert status == 200
-    assert "Automatic claims" in body
-    assert "Amount at stake: 390.00" in body
+    assert 'class="section"' in body
+    assert "541.6" in body, "each section names the ground it rests on"
+    assert "390.00" in body, "the amount at stake is on the page"
+    assert "needs evidence" in body, "a ground that cannot be sent yet says so"
 
 
 def test_the_letter_carries_the_day_strip_because_it_is_the_strongest_asset(server: str) -> None:
@@ -391,10 +398,11 @@ def test_the_letter_carries_the_day_strip_because_it_is_the_strongest_asset(serv
         FIXTURE.read_bytes(),
     )
 
-    # The letter is HTML-wrapped, and the strip is the reason a client should not
-    # have to ask for it.
-    assert "day by day" in body or "Day by day" in body
-    assert "Amount at stake: 390.00" in body
+    # The strip is the reason a client should not have to ask for it, and it is now
+    # the same day grid every other page uses rather than markup spliced into a blob.
+    assert body.count('class="day"') == 11
+    assert 'data-state="disputed"' in body
+    assert "390.00" in body
 
 
 def test_the_root_serves_a_form_a_person_can_actually_use(server: str) -> None:

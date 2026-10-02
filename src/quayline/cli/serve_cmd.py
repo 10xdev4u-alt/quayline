@@ -16,7 +16,7 @@ from typing import Any
 
 from quayline.cli.audit_render import as_human, as_json, resolve_disclosed
 from quayline.serve.app import run_server
-from quayline.serve.audit_runner import AuditRunner
+from quayline.serve.audit_runner import AuditRunner, find_runner
 from quayline.serve.audit_runner import build_runner as _build_runner
 
 
@@ -50,7 +50,7 @@ def build_runner() -> AuditRunner:
 
 def serve_intake(host: str, port: int, out: Any) -> int:
     """Run the intake until interrupted. Returns a CLI exit code."""
-    return run_server(host, port, build_runner(), out)
+    return run_server(host, port, build_runner(), find_runner(resolve_disclosed), out)
 
 
-__all__ = ["add_parser", "build_runner", "serve_intake"]
+__all__ = ["add_parser", "build_runner", "find_runner", "serve_intake"]

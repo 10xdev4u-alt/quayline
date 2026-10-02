@@ -168,22 +168,10 @@ INTAKE_CSS = """
   font-size: 0.95rem;
 }
 .controls input:hover { border-color: var(--slate); }
-button {
-  flex: 1 1 100%;
-  background: var(--chalk);
-  color: var(--quay);
-  border: 0;
-  padding: 0.85rem 1rem;
-  font: 800 0.82rem/1 var(--font-stencil);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background var(--beat) var(--ease);
-}
-button:hover { background: var(--signal); }
-button[disabled] { opacity: 0.5; cursor: progress; }
-.foot { grid-column: 1 / -1; border-top: 1px solid var(--edge); margin-top: var(--pad); padding-top: var(--gap); color: var(--slate); max-width: var(--measure); }
-.foot p { margin: 0 0 0.7rem; }
+/* The submit takes the full width of the form. The button itself is in the base
+   sheet, because the result page has one too. */
+button { flex: 1 1 100%; }
+.foot { grid-column: 1 / -1; }
 @media (max-width: 56rem) {
   .manifest { grid-template-columns: minmax(0, 1fr); }
   .rail { order: 2; }
