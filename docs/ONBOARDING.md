@@ -322,10 +322,19 @@ blocks, then closed. Proving a control works is part of shipping it.
 ## 5. What the codebase looks like
 
 17,059 lines across 81 modules, 1,436 tests, zero runtime dependencies. Dev tools
-only: ruff, mypy, pytest. Measured at commit 7f7c066 with
-`find src -name '*.py' ! -name '__init__.py' | xargs wc -l` and `pytest -q`.
-These numbers move as work lands, so treat `make validate` output as authoritative
-and this paragraph as a snapshot with a commit on it.
+only: ruff, mypy, pytest.
+
+Lines and modules measured at commit 7f7c066 with
+`find src -name '*.py' ! -name '__init__.py' | xargs wc -l`. They have not moved
+since, because nothing in this repository's history touches `src/` for a reason that
+changes them without landing its own tests alongside.
+
+The test count is **not** dated, and deliberately so. It moves on every pull request
+that adds a test, so any commit named beside it would be a commit that does not
+contain the tests it counts. It is asserted by `test_test_count_is_current` instead,
+which fails on the pull request that makes it wrong.
+
+Treat `make validate` as authoritative for all three.
 
 ```
 src/quayline/
@@ -409,7 +418,11 @@ same for `--state open`.
 **M1 is closed, all 42 of it.** Everything load bearing is built: the checklist,
 the vacatur, the deadlines, both recomputation paths, the closure model, the
 holiday calendar, the day-count arithmetic, and tariff modules for Hapag-Lloyd,
-Maersk, CMA CGM, ONE, MSC, ZIM and Evergreen.
+Maersk, CMA CGM, ONE, MSC and ZIM. Evergreen is present as
+`regulation/evergreen.py`, which is the *Evergreen Shipping Agency v. FMC* case
+holding a complainant to three per-day proofs, not a tariff, so it is in
+`regulation/` and not in `tariffs/`. A carrier can appear in one without appearing in
+the other and the distinction is the point.
 
 **One carrier has transcribed rates, and the modules are not the same thing.**
 `quayline coverage` is the authority: it prints that we hold rates for **one**
@@ -425,23 +438,30 @@ history.
 
 ### The one structural gap, and it is not a milestone
 
-`AGENTS.md` section six describes nine packages under `src/quayline/`. Four of
-them do not exist: `filing/`, `fmc/`, `cli/` and `web/`. There is no `audit()`
-function anywhere in `src/`, and the only one in the repository is a test helper in
-`tests/test_ordering.py`.
+This section used to say there was no spine. There is one, and it has been there
+since #79 closed, so read this as history if you hit the old wording anywhere.
 
-So the pieces are built and nothing joins them. `ingest/` produces validated
-documents, `engine/` produces an `AuditResult`, `evidence/packet.py` assembles a
-dispute packet, and there is no entry point that runs one document through all
-three. The engine recomputes and there is no product on top of it yet.
+`engine/audit.py` provides `audit()`. `cli/` runs it from a terminal. `serve/` runs it
+from a browser. `filing/` turns findings into grounds and grounds into the document a
+carrier receives. `web/` is what a person actually looks at. The pieces are joined.
 
-That gap is why #79 is the highest value open issue. It is not a CLI feature, it
-is the missing spine, and #84 needs the same spine.
+What is genuinely absent is `fmc/`. `AGENTS.md` section six lists it as a package under
+`src/quayline/` and it does not exist, and the reason is that `regulation/evergreen.py`
+already holds what was meant to go in it: the three per-day proofs a complainant has to
+show, per *Evergreen Shipping Agency v. FMC*. Nobody has built the submission
+machinery around those proofs, which is the complaint half of the product as opposed to
+the recomputation half.
+
+So the honest statement is narrower than the old one. **The engine recomputes, the
+letter is assembled, and the complaint is not filed for you.** Everything needed to
+submit to an FMC complaint exists as a rule and none of it exists as code. Issue #62 is
+that work.
 
 ### The order I would take the remaining work in
 
-**First, the spine.** One function that takes a document, runs the checks, and
-returns an `AuditResult`. Then #79 on top of it, which is the CLI: a human triage
+**First, the submission path.** The spine landed in #79 and the letter after it, so
+the remaining half is `fmc/`: the complaint itself, built from grounds the engine has
+already priced. The CLI today gives a human triage
 line, a JSON mode, and exit codes that distinguish no findings, filing-worthy
 findings, and an engine error. #84 then reports what the engine does not know,
 which is the same code path with a different question asked of it.
@@ -540,9 +560,11 @@ confirmed a `<style>` tag was present. A page that emitted the rail, the day gri
 legend and the ledger and shipped CSS for none of them. A `font-family` with a weight
 inside it, `800 system-ui`, which is invalid, so the heading meant to be a heavy
 grotesque rendered as Times. None of these is reachable from a test suite that does not
-render. **Look at the page.** The guards written afterwards check that every class a
-page emits has a rule in the stylesheet that page ships, and that it ships no rule
-belonging to another page, which is how the second and third would now be caught.
+render. **Look at the page.** The guard written afterward checks that every
+class a page emits has a rule in the stylesheet that page ships, and that it ships no
+rule belonging to another page. That catches the second. It does **not** catch the
+third, and this document does not claim it does: a class-to-rule check cannot see that
+`800 system-ui` is a weight sitting inside a family. **Say what a check covers.**
 
 **An over-strict rule shipped knowingly.** The ONE power-of-attorney requirement
 is `UNVERIFIED` and may block submissions ONE would have accepted. That is the

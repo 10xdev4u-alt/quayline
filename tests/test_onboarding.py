@@ -111,24 +111,56 @@ def test_every_file_the_map_names_exists() -> None:
     ``.githooks`` and ``tests`` are outside the package and are legitimately named in
     the prose, so they are exempt rather than listed.
     """
-    src = SRC
     outside = {"check_commit_msg", "test_ordering"}
-    named = set(re.findall(r"\b([a-z_]+)\.py\b", _document()))
-    missing = sorted(name for name in named - outside if not list(src.rglob(name + ".py")))
-    assert not missing, (
-        f"the document names {missing}, which do not exist under src/quayline. Either the "
-        f"map is wrong or the module is missing, and a reader cannot tell which."
+    missing = sorted(
+        f"{package}/{name}"
+        for package, name in _mapped_modules()
+        if name not in outside and not (SRC / package / name).is_file()
     )
+    assert not missing, (
+        f"the map names {missing}, which do not exist at those paths. An entry naming the "
+        f"wrong package is as wrong as one naming a module that was never written, and "
+        f"searching the tree for a bare basename would pass on it."
+    )
+
+
+def _mapped_modules() -> list[tuple[str, str]]:
+    """Read the map as (package, filename) pairs, so a pair is checked as written.
+
+    A set of bare basenames loses the package, and the package can be wrong
+    independently of the file existing somewhere else in the tree. This parser
+    failed on the map as first written, which is why it asserts it read something.
+    """
+    pairs, package = [], None
+    for line in _document().splitlines():
+        heading = re.match(r"^  ([a-z_]+)/\s+\S", line)
+        if heading:
+            package = heading.group(1)
+            continue
+        entry = re.match(r"^    ([a-z_]+\.py)\s", line)
+        if entry and package:
+            pairs.append((package, entry.group(1)))
+    assert pairs, "could not read a single module entry out of the map"
+    return pairs
 
 
 def test_snapshot_carries_the_commit_it_was_measured_at() -> None:
     """A figure with no commit on it cannot be checked, and drifts silently."""
     doc = _document()
-    measured = re.findall(r"Measured at commit (\w+)", doc)
-    assert measured, "the document states figures without saying when they were true"
-    for commit in measured:
+
+    codebase = re.search(r"Lines and modules measured at commit (\w+)", doc)
+    assert codebase, "the codebase snapshot does not say which commit it was measured at"
+
+    issues = re.search(r"(\d+ issues closed).*?Measured at commit (\w+)", doc, re.DOTALL)
+    assert issues, "the issue snapshot does not say which commit it was measured at"
+
+    # Checked separately, because a commit named in one section must not be able to
+    # satisfy the requirement in the other. Asserting both exist as substrings and
+    # moving on is how the codebase section lost its commit unnoticed.
+    for label, commit in (("codebase", codebase.group(1)), ("issue", issues.group(2))):
         assert re.fullmatch(r"[0-9a-f]{7,40}", commit), (
-            f"{commit} is not a commit hash, so a reader cannot check the figure against it"
+            f"the {label} snapshot names {commit!r}, which is not a commit hash, so a "
+            f"reader cannot check that figure against anything"
         )
 
 
