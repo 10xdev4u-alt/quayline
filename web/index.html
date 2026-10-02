@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quayline: demurrage and detention, recomputed</title>
+<meta name="description" content="Recomputes a U.S. ocean demurrage or detention invoice one day at a time, from the disclosures the carrier was required to publish.">
+<style>:root {
+  --font-stencil: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-text: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-data: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --weight-stencil: 800;
+  --weight-label: 700;
+  --quay: #12171C;
+  --deck: #1B2229;
+  --edge: #2C353D;
+  --chalk: #EAEFF2;
+  --slate: #8A9BA6;
+  --sea: #4FA88B;
+  --rust: #DC7048;
+  --signal: #E8C55A;
+  --edge-strong: #66747F;
+  --gap-tight: 0.5rem;
+  --gap: 1rem;
+  --gap-loose: 2rem;
+  --pad: clamp(1.25rem, 4vw, 3rem);
+  --rail: 17rem;
+  --measure: 68ch;
+  --beat: 140ms;
+  --stagger: 26ms;
+  --settle: 420ms;
+  --ease: cubic-bezier(0.2, 0, 0.1, 1);
+}
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--quay);
+  color: var(--chalk);
+  font-family: var(--font-text);
+  font-size: clamp(15px, 1.6vw, 17px);
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The stencil. Container numbers, section labels, anything that is a label on a
+   physical object. Uppercase with tight tracking, because loose uppercase is the
+   single clearest tell of a page nobody art-directed. */
+.stencil {
+  font-family: var(--font-stencil);
+  font-weight: var(--weight-stencil);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.7rem;
+  color: var(--slate);
+}
+
+/* Every number on the page. Tabular figures so columns line up to the pixel, and a
+   slashed zero so a container number is never read as the letter O. */
+.data {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+}
+
+h1 {
+  font-family: var(--font-stencil);
+  font-weight: var(--weight-stencil);
+  font-size: clamp(1.9rem, 5vw, 3.1rem);
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+  margin: 0 0 0.6rem;
+}
+
+a { color: var(--signal); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--chalk); }
+
+/* Focus is a rectangle, not a glow. A glow on a dark ground disappears at the edges
+   where it matters. */
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+  border-radius: 1px;
+}
+
+.sr {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* The rail is the SHIPPER / CONSIGNEE block of a bill of lading: bordered, labelled,
+   stacked. Every value in it comes off the document or out of the engine. */
+.rail { border: 1px solid var(--edge); background: var(--deck); }
+.rail dl { margin: 0; }
+.rail div { padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--edge); }
+.rail div:last-child { border-bottom: 0; }
+.rail dt { margin: 0 0 0.2rem; }
+.rail dd { margin: 0; font-size: 0.95rem; word-break: break-word; }
+/* The grid. One cell per day, laid out as a track that wraps. Each cell states its own
+   day number and date, so the grid is readable with the colour stripped out. */
+.days { display: grid; grid-template-columns: repeat(auto-fit, minmax(4.1rem, 1fr)); gap: 0.4rem; }
+.day {
+  border: 1px solid var(--edge);
+  background: var(--deck);
+  padding: 0.55rem 0.6rem;
+  min-height: 5.4rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.3rem;
+}
+.day .n { font-size: 1.5rem; line-height: 1; }
+.day .when { font-size: 0.72rem; color: var(--slate); }
+.day .state {
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.day[data-state='free'] { border-color: color-mix(in srgb, var(--sea) 55%, var(--edge)); }
+.day[data-state='free'] .state { color: var(--sea); }
+.day[data-state='billed'] { border-color: color-mix(in srgb, var(--rust) 55%, var(--edge)); }
+.day[data-state='billed'] .state { color: var(--rust); }
+/* The disputed day is the one the whole page is about. It gets the high-vis treatment
+   terminals paint on anything that must not be run over. */
+.day[data-state='disputed'] {
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+.day[data-state='disputed'] .state { color: var(--signal); }
+.legend { display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: 0.6rem; }
+.legend span { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--slate); }
+.legend i { width: 0.7rem; height: 0.7rem; border: 1px solid; display: inline-block; }
+/* The money. The excess is the largest number on the page because it is the reason
+   anyone is here. */
+.ledger { display: grid; gap: 0.15rem; margin: var(--gap-loose) 0 0; padding: 0; border: 0; }
+.ledger div { display: flex; justify-content: space-between; gap: var(--gap); padding: 0.5rem 0; border-bottom: 1px solid var(--edge); }
+.ledger dt { margin: 0; color: var(--slate); }
+.ledger dd { margin: 0; font-size: 1.02rem; }
+.ledger .excess { border-bottom: 0; padding-top: 0.9rem; }
+.ledger .excess dt { color: var(--signal); font-weight: 700; }
+.ledger .excess dd { font-size: clamp(1.8rem, 6vw, 2.9rem); color: var(--signal); line-height: 1; }
+
+.wrap { max-width: 62rem; margin: 0 auto; padding: var(--pad); }
+.bar {
+  display: flex; flex-wrap: wrap; gap: var(--gap);
+  justify-content: space-between; align-items: baseline;
+  padding-bottom: var(--gap-tight); border-bottom: 1px solid var(--edge);
+}
+h2 {
+  font-family: var(--font-stencil); font-weight: var(--weight-stencil);
+  font-size: clamp(1.15rem, 2.6vw, 1.5rem); letter-spacing: -0.02em;
+  margin: var(--gap-loose) 0 0.5rem;
+}
+.prose { max-width: var(--measure); }
+.prose p { margin: 0 0 0.9rem; }
+.plain { color: var(--slate); }
+
+/* The proof sits in the same grid the intake uses, so the two pages cannot drift into
+   looking like different products. */
+.proof { margin-top: var(--gap-loose); }
+
+/* The rail is a narrow column on the intake, where it sits beside the argument. Here it
+   is full width, and seven stacked rows of it push the day grid below the fold. Laying
+   the rows out as columns keeps the block reading as a manifest header rather than as
+   the first thing on the page. */
+.proof .rail dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+}
+.proof .rail div { border-bottom: 0; border-right: 1px solid var(--edge); }
+
+.facts { margin: var(--gap-loose) 0 0; padding: 0; display: grid; gap: 0.15rem; }
+.facts div { display: flex; gap: var(--gap); padding: 0.5rem 0; border-bottom: 1px solid var(--edge); }
+.facts dt { margin: 0; color: var(--slate); flex: 0 0 13rem; }
+.facts dd { margin: 0; }
+
+.foot { margin-top: var(--pad); padding-top: var(--gap); border-top: 1px solid var(--edge); }
+.foot p { max-width: var(--measure); color: var(--slate); margin: 0 0 0.7rem; }
+code { font-family: var(--font-data); color: var(--chalk); }
+@media (max-width: 40rem) {
+  .facts div { flex-direction: column; gap: 0.15rem; }
+  .facts dt { flex: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="bar"><span class="stencil">Quayline</span><span class="stencil">46 CFR Part 541</span></div>
+<h1>A container sits. The clock runs. Somebody pays.</h1>
+<div class="prose">
+<p>When your box is sitting at a port or a rail yard longer than it should be, the terminal charges you for the delay. That bill is demurrage when the box is still there, and detention when it has left and is not returned. Both are charged per day, and both arrive as one number on one invoice.</p>
+<p>The carrier is required to publish the rule they are charging you by: the free days, the rate, and the dates they say they counted. Almost nobody checks the bill against that rule. When they do, the arithmetic is often wrong, usually by a day or two and usually in the carrier's favour.</p>
+</div>
+<div class="proof">
+<h2>The worked example, day by day</h2>
+<aside class="rail"><dl><div><dt class="stencil">carrier</dt><dd class="data">Maersk</dd></div><div><dt class="stencil">terminal</dt><dd class="data">Newark, NJ, dry</dd></div><div><dt class="stencil">rule</dt><dd class="data">Maersk US Newark Dry</dd></div><div><dt class="stencil">invoice date</dt><dd class="data">2026-07-20</dd></div><div><dt class="stencil">free time</dt><dd class="data">7 days</dd></div><div><dt class="stencil">disclosed end</dt><dd class="data">2026-07-07</dd></div><div><dt class="stencil">recomputed end</dt><dd class="data">2026-07-08</dd></div></dl></aside>
+<div class="days"><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">1</span><span class="when data">06-30</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">2</span><span class="when data">07-01</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">3</span><span class="when data">07-02</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">4</span><span class="when data">07-03</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">5</span><span class="when data">07-04</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">6</span><span class="when data">07-05</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">7</span><span class="when data">07-06</span><span class="state">free</span></div><div class="day" data-state="free" style="--accent:var(--sea)"><span class="n data">8</span><span class="when data">07-07</span><span class="state">free</span></div><div class="day" data-state="disputed" style="--accent:var(--signal)"><span class="n data">9</span><span class="when data">07-08</span><span class="state">disputed</span></div><div class="day" data-state="billed" style="--accent:var(--rust)"><span class="n data">10</span><span class="when data">07-09</span><span class="state">billed</span></div><div class="day" data-state="billed" style="--accent:var(--rust)"><span class="n data">11</span><span class="when data">07-10</span><span class="state">billed</span></div></div>
+<p class="legend"><span><i style="border-color:var(--sea)"></i><b>free</b> inside the disclosed free time</span><span><i style="border-color:var(--rust)"></i><b>billed</b> billed by the carrier</span><span><i style="border-color:var(--signal)"></i><b>disputed</b> billed in error, this is the day</span></p>
+<dl class="ledger"><div><dt>billed by the carrier</dt><dd class="data">$1,170.00</dd></div><div><dt>allowed by the disclosed rule</dt><dd class="data">$780.00</dd></div><div class="excess"><dt>disputed</dt><dd class="data">$390.00</dd></div></dl>
+</div>
+<h2>Why the ninth day is the argument</h2>
+<div class="prose">
+<p>The rule the carrier published allows 7 days of free time, and it says that free time ended on 2026-07-07. Counting the days it discloses itself puts the end at 2026-07-08. The carrier billed through the day after that, and charged for the day in between.</p>
+<p>That is the whole dispute. Not a rounding argument and not a complaint about the rate: the carrier counted one day more than its own rule allows. The recomputation is reproducible from the invoice, which is what makes it worth sending.</p>
+</div>
+<h2>What this does today</h2>
+<ul class="plain"><li>The engine. It reads a born-digital carrier PDF, pulls the disclosures, and recomputes the charge one day at a time under 46 CFR Part 541.</li><li>One transcribed carrier tariff, Maersk, taken from Maersk&#x27;s own published document and carrying its effective date.</li><li>A dispute packet. The findings, the recomputation, and the day strip, rendered as a letter you can send.</li><li>A local intake. It runs on your machine, on 127.0.0.1, and refuses any other interface.</li></ul>
+<h2>What this does not do</h2>
+<ul class="plain"><li>No hosted version. There is no site to sign up for and nothing to upload to. It runs on your own machine, and that is the honest state of it.</li><li>No customer. Nobody has used this on a real account yet, so there is no recovery rate to quote and no case study.</li><li>One carrier&#x27;s rates. A carrier we hold a day-count rule for but no transcribed rate still gets its days recomputed and not its money, and the answer says so. A carrier with no day-count rule cannot be audited at all, and says that too.</li><li>No filing. This finds the error and writes the letter. It does not submit to a carrier or to the FMC.</li></ul>
+<div class="foot">
+<p>The days above are computed from a synthetic invoice carrying one real transcribed Maersk rate. It is not a client, and no recovery rate is claimed anywhere on this site.</p>
+<p>To run it yourself: <code>quayline serve</code>, then open the address it prints. It binds to 127.0.0.1 and refuses any other interface, keeps no account, writes nothing to disk, and logs no request line. To see how far the rate data reaches, run <code>quayline coverage</code>.</p>
+</div>
+</div>
+</body>
+</html>

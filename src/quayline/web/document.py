@@ -26,7 +26,8 @@ import hashlib
 
 from quayline.web.design import stylesheet
 from quayline.web.intake import (
-    GRID_CSS,
+    COMPONENT_CSS,
+    INTAKE_CSS,
     day_cells,
     esc,
     ledger,
@@ -153,7 +154,7 @@ def _document(body: str, title: str, extra_style: str = "") -> str:
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{esc(title)}</title>\n"
-        f"<style>{stylesheet()}{GRID_CSS}{extra_style}</style>\n"
+        f"<style>{stylesheet()}{COMPONENT_CSS}{INTAKE_CSS}{extra_style}</style>\n"
         "</head>\n"
         f"<body>\n{body}\n</body>\n"
         "</html>\n"
@@ -212,9 +213,10 @@ def intake_document(
         "<p>This runs on your own machine, bound to 127.0.0.1 and refusing any other "
         "interface. There is no account, nothing is written to disk, and no request line "
         "is logged. Uploaded bytes live in memory for the length of one request.</p>"
-        "<p>We hold transcribed rate data for one carrier. For any other carrier the day "
-        "count is still recomputed and the money is not, which the answer says plainly "
-        "rather than hiding. Run <code>quayline coverage</code> for the list.</p>"
+        "<p>We hold a day-count rule and transcribed rates for one carrier. A carrier "
+        "we can count days for but hold no rate for still gets the days recomputed and "
+        "not the money. A carrier with no day-count rule cannot be audited at all. Run "
+        "<code>quayline coverage</code> for the exact list.</p>"
         "</footer>\n"
         "</div>\n"
         f"<script>{SCRIPT}</script>"

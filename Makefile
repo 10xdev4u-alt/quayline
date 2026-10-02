@@ -17,7 +17,7 @@ MYPY    := .venv/bin/mypy
 PYTEST  := .venv/bin/pytest
 PRECOMMIT := .venv/bin/pre-commit
 
-.PHONY: install validate format hooks clean index repo-state specimen
+.PHONY: install validate format hooks clean index repo-state specimen landing
 
 # The dev group is declared in pyproject.toml and installed from there. Naming
 # the tools on the command line instead would let any older version already on
@@ -96,6 +96,15 @@ specimen:
 	$(PY) -c "from quayline.web.render import generate; \
 		open('web/specimen.html','w',encoding='utf-8').write(generate())"
 	@echo "wrote web/specimen.html"
+
+# The landing page is generated for the same reason the specimen is. A hand written
+# page in web/ is a page whose figures can drift from the engine, and the repository
+# hygiene test refuses a file in web/ that no target writes.
+landing:
+	@mkdir -p web
+	$(PY) -c "from quayline.web.landing_page import landing_page; \
+		open('web/index.html','w',encoding='utf-8').write(landing_page())"
+	@echo "wrote web/index.html"
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov
