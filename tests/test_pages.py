@@ -29,6 +29,7 @@ import pytest
 from quayline.cli.audit_render import resolve_disclosed
 from quayline.engine.daycount import Direction
 from quayline.evidence.packet import render
+from quayline.regulation.kill_switch import consequence_text
 from quayline.serve.audit_runner import Findings, find_runner
 from quayline.serve.landing import landing_document
 from quayline.web import reasoning
@@ -613,3 +614,38 @@ def test_the_two_pages_cannot_disagree_about_the_money_label() -> None:
     clean_copy = filing_document(clean)
     assert ">disputed</dt>" not in clean_copy
     assert ">difference</dt>" in clean_copy
+
+
+# --- 541.5 on the result page, issue 207 -------------------------------------
+
+
+def test_the_page_states_the_obligation_is_eliminated() -> None:
+    """ "automatic" in a rail column tells a reader nothing on its own.
+
+    The fixture omits the invoice due date under 541.6(b)(2), and 541.5 makes that
+    automatic: the obligation to pay is eliminated, with no cure period and no showing
+    of prejudice. A reader who sees the word "automatic" and is not told what it
+    automates has learned nothing they can act on.
+    """
+    html = _result_page()
+    assert "obligation to pay" in html.lower()
+    assert "no cure period" in html.lower()
+
+
+def test_the_page_names_the_clause_that_did_it() -> None:
+    html = _result_page()
+    assert "541.6(b)(2)" in html
+    assert "541.5" in html
+
+
+def test_the_consequence_is_sourced_from_the_module_not_written_by_hand() -> None:
+    """The page must not be able to drift from what 541.5 says.
+
+    The wording lives in `kill_switch` and the page reads it, so a change to the
+    regulation's consequence moves the page with it. A sentence typed into the template
+    is a sentence that will still be here in two years, describing a rule that has
+    since changed.
+    """
+    html = _result_page()
+    text = consequence_text()
+    assert text[:40] in html

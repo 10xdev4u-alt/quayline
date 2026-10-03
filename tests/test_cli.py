@@ -75,6 +75,11 @@ def test_a_clean_document_exits_zero(tmp_path: Path) -> None:
     clean.write_bytes(
         build_pdf(
             "Invoice Date: 2026-07-20",
+            # 541.6(b)(2) requires the due date. Issue 207 found that every
+            # synthetic invoice in this file stated an issue date and no due date,
+            # so a document the test called clean was non-compliant and the 541.5
+            # check was right to find it.
+            "Due Date: 2026-08-19",
             "Container Availability Date: 2026-06-30",
             # Four free days from 06-30 on a Monday to Saturday basis expires 07-04,
             # so charging from 07-05 is consistent with what the carrier disclosed.
@@ -205,6 +210,11 @@ def test_an_unheld_rate_rule_is_a_finding_and_never_a_guessed_rate(
     path.write_bytes(
         build_pdf(
             "Invoice Date: 2026-07-20",
+            # 541.6(b)(2) requires the due date. Issue 207 found that every
+            # synthetic invoice in this file stated an issue date and no due date,
+            # so a document the test called clean was non-compliant and the 541.5
+            # check was right to find it.
+            "Due Date: 2026-08-19",
             "Container Availability Date: 2026-06-30",
             "Allowed Free Time: 4 days",
             "Start Date of Free Time: 2026-06-30",
@@ -286,6 +296,11 @@ def test_a_clean_document_packet_says_there_is_no_dispute(tmp_path: Path) -> Non
     clean.write_bytes(
         build_pdf(
             "Invoice Date: 2026-07-20",
+            # 541.6(b)(2) requires the due date. Issue 207 found that every
+            # synthetic invoice in this file stated an issue date and no due date,
+            # so a document the test called clean was non-compliant and the 541.5
+            # check was right to find it.
+            "Due Date: 2026-08-19",
             "Container Availability Date: 2026-06-30",
             "Allowed Free Time: 4 days",
             "Start Date of Free Time: 2026-06-30",
@@ -322,6 +337,11 @@ def _contested_pdf(tmp_path: Path) -> Path:
     path.write_bytes(
         build_pdf(
             "Invoice Date: 2026-07-20",
+            # 541.6(b)(2) requires the due date. Issue 207 found that every
+            # synthetic invoice in this file stated an issue date and no due date,
+            # so a document the test called clean was non-compliant and the 541.5
+            # check was right to find it.
+            "Due Date: 2026-08-19",
             "Container Availability Date: 2026-07-30",
             "Allowed Free Time: 4 days",
             "Start Date of Free Time: 2026-07-01",

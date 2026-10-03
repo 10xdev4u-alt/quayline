@@ -83,3 +83,24 @@ def effect_of(omissions: Iterable[Omission]) -> Obligation:
     for _ in omissions:
         return Obligation.ELIMINATED
     return Obligation.INTACT
+
+
+def consequence_text() -> str:
+    """What 541.5 does when a required minimum is missing, in one sentence.
+
+    Lives here rather than in a page template, for one reason: a renderer that types
+    the consequence into its own markup is a renderer that will still be claiming it
+    after the rule changes. Issue 207 found the result page showing the word
+    "automatic" in a column with nothing saying what it automates, which is the kind
+    of omission no test can see and every reader can.
+
+    The wording is the regulation's own shape. 541.5 says failure to include any
+    required minimum eliminates the obligation to pay, and it says nothing about cure or
+    prejudice, so the sentence does not invent either.
+    """
+    return (
+        "46 CFR 541.5: where a required minimum is missing from a demurrage or "
+        "detention invoice, the obligation to pay the applicable charge is "
+        "eliminated. There is no cure period and no showing of prejudice, so this "
+        "does not depend on arguing that anyone was harmed."
+    )
