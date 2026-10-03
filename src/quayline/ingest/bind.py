@@ -95,6 +95,41 @@ class BindError(FieldError):
     """
 
 
+class UnreadableDocumentError(BindError):
+    """A field we could not find, on a document we may simply not understand.
+
+    Issue 214, and the answer to a hazard this module had already documented.
+
+    Every line of the reference fixture is ``Label: value``. A carrier invoice is
+    not: it uses columns, uppercase names, the carrier's own date style, and
+    different words for the same facts. Against one, this binder raised
+    ``OmittedError`` for 541.6(b)(4) and said, in the same breath, that this was "a
+    finding against the carrier, not an extraction fault". The document stated the
+    free time start, as ``Free Time Commences  30-JUN-2026``.
+
+    So the binder accused a compliant carrier of withholding a disclosure, and
+    541.5 makes that accusation automatic, so it does not get corrected by
+    disputing it. It gets filed.
+
+    **Absence of a field is not evidence of absence.** That holds only when our
+    reading of the document is good enough for the question, and here it demonstrably
+    was not. Where the two cannot be told apart, we must say so.
+
+    The rule this module now follows: a field is *absent* only when the document is one
+    this binder reads. Otherwise it is *unreadable*, and that is our failure to report,
+    naming the field we lost and claiming nothing about the carrier.
+    """
+
+    def __init__(self, field: str, cite: str) -> None:
+        super().__init__(
+            f"this document does not state the {field} in a form Quayline can read, so "
+            f"{cite} cannot be evaluated. That is a limitation of what we were able to "
+            f"parse, not a finding about the carrier, and nothing here should be filed."
+        )
+        self.field = field
+        self.cite = cite
+
+
 class OmittedError(BindError):
     """A required disclosure is absent from the document.
 
@@ -113,6 +148,10 @@ class OmittedError(BindError):
 
     ``tests/fixtures/charge_table.pdf`` is a real example. It states a container,
     days, rate, amount and total, and no free time at all.
+
+    **Issue 214: this type was reachable for a document this binder had not understood
+    at all**, which is the error described above. It is now raised only for a layout the
+    binder reads, and `UnreadableDocumentError` covers everything else.
     """
 
     def __init__(self, field: str, cite: str) -> None:
@@ -191,8 +230,76 @@ def _require(fields: Fields, field: str, *labels: str, cite: str = CITE_OMISSION
     omission, and an omission is the finding: automatic, no cure period, no showing of
     prejudice. A caller passes the specific clause where one exists, and the message
     then names the clause the carrier failed to disclose.
+
+    Issue 214: the exception this raises is now `UnreadableDocumentError`, not
+    `OmittedError`, because a label we did not find is not a disclosure the carrier
+    failed to make. The distinction is that between an omission and our own parsing
+    defect, and the binder cannot tell them apart from a missing label alone.
     """
-    return fields.demand(labels, OmittedError(field, cite))
+    return fields.demand(labels, _absence(fields, field, cite))
+
+
+#: Labels that only appear on a document shaped like the one this binder reads.
+#:
+#: Issue 214. A carrier invoice in columns yields almost no labels, and a document we
+#: have not understood cannot have its absences taken as disclosures the carrier failed
+#: to make. These are the anchors that mark the layout as recognised.
+_ANCHOR_LABELS = frozenset(
+    {
+        # Distinctive to a layout this binder reads. A carrier's own wording for the
+        # same facts, such as "Free Time Commences", does not match, which is the point:
+        # the anchor has to be something a stranger's invoice is unlikely to say.
+        "start date of free time",
+        "end date of free time",
+        "allowed free time",
+        "container number",
+        # `charge_table.pdf` says "Container", not "container number", and it is still
+        # a document this binder reads. These only ever match something the colon
+        # pattern already found, so the question they answer is "did we recognise the
+        # layout" rather than "is this word one a carrier would use".
+        "container",
+        "invoice date",
+        "bill of lading number",
+        "bol number",
+        "b/l",
+        "total",
+        "total amount",
+        "amount due",
+        "charged dates",
+        "dates charged",
+        "rate rule",
+        "tariff rule",
+    }
+)
+
+
+def layout_recognised(fields: Fields) -> bool:
+    """Whether this looks like a document this binder knows how to read.
+
+    Deliberately coarse. The question is not "did we find the field" but "do we
+    recognise the shape of the thing", and a single anchor label is enough to answer
+    that. A document with one of these on it is one whose other absences mean something.
+    """
+    return bool(_ANCHOR_LABELS & set(fields.values))
+
+
+def _absence(fields: Fields, field: str, cite: str) -> BindError:
+    """The right failure for a field we did not find.
+
+    Two failures, one field, and the difference is the whole of issue 214:
+
+    - On a document this binder reads, a field that is not there is a disclosure the
+      carrier did not make. ``OmittedError``, and 541.5 applies.
+    - On a document it does not read, we do not know that the carrier left it out. We
+      know only that we did not find it, which is our failure. ``UnreadableDocumentError``.
+
+    Reporting the second as the first accuses a carrier of withholding something on a
+    document we never understood, and 541.5 makes that accusation automatic, so it is
+    not corrected by disputing it. It is filed.
+    """
+    if layout_recognised(fields):
+        return OmittedError(field, cite)
+    return UnreadableDocumentError(field, cite)
 
 
 def _scan(text: TextLayer) -> Fields:
@@ -311,7 +418,7 @@ def _charged_dates(fields: Fields) -> tuple[date, ...]:
             )
         days.append(parsed)
     if not days:
-        raise OmittedError("charged dates", CITE_CHARGED_DATES)
+        raise _absence(fields, "charged dates", CITE_CHARGED_DATES)
     if len(set(days)) != len(days):
         raise BindError(
             f"the charged dates repeat a day. Duplicates belong to the arithmetic "
@@ -365,9 +472,10 @@ def bind_ledger(text: TextLayer) -> BoundLedger:
     )
 
     if total is None:
-        # The carrier named a rule, so a total is what checking that rule means.
+        # The carrier named a rule, so a total is what checking that rule means, and
         # 541.6(c)(1) requires the total on the invoice.
-        raise OmittedError("total", CITE_TOTAL)
+        #
+        raise _absence(fields, "total", CITE_TOTAL)
     if fields.get("rate") is None:
         raise BindError(
             "the document states a total but no rate, so the money cannot be "

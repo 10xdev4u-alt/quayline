@@ -321,7 +321,7 @@ blocks, then closed. Proving a control works is part of shipping it.
 
 ## 5. What the codebase looks like
 
-17,857 lines across 83 modules, 1,497 tests, zero runtime dependencies. Dev tools
+17,971 lines across 83 modules, 1,501 tests, zero runtime dependencies. Dev tools
 only: ruff, mypy, pytest.
 
 Lines and modules measured at commit 7f7c066 with
@@ -531,6 +531,28 @@ to be".**
 window that ran backwards and reported `-212` days remaining for a capture *inside*
 its window. In each case the test checked the part that already worked. **A test
 asserting something untrue is worse than no test, because it looks like coverage.**
+
+**A fully compliant invoice, reported as a carrier who withheld a disclosure.** Every
+line of the reference fixture is `Label: value`. A carrier invoice is not: it uses
+columns, uppercase names, the carrier's own date style and different words. Against one,
+the binder read 1 label out of 18 lines, and then raised `OmittedError` for 541.6(b)(4),
+which says in its own message that this is "a finding against the carrier, not an
+extraction fault".
+
+The document states it, as `Free Time Commences  30-JUN-2026`.
+
+So a compliant invoice became an automatic 541.5 finding that eliminates the obligation
+to pay, and the claim gets printed, signed and sent. Issue 214. `ingest/bind.py`
+documented this exact hazard in its module docstring and then had the bug, which is the
+part worth remembering: **naming a danger is not building against it.**
+
+There is now `UnreadableDocument`, raised when the layout is not one the binder reads,
+and the choice is made per document rather than per field, because a document it reads
+has real absences and a document it does not has only our failures.
+
+**Every test in this repository used a fixture shaped like the parser.** Passing tests
+proved the parser agreed with itself. The first document checked against the shape the
+product will actually meet found a shipping blocker on the first try.
 
 **Four pages that each said more than the engine could support.** All four were found
 in review, and all four were prose written by hand rather than data read from the
