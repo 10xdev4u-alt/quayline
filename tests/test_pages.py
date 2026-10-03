@@ -649,3 +649,21 @@ def test_the_consequence_is_sourced_from_the_module_not_written_by_hand() -> Non
     html = _result_page()
     text = consequence_text()
     assert text[:40] in html
+
+
+def test_generated_pages_carry_no_machine_specific_path() -> None:
+    """Issue 208: an absolute fixture path reached a generated page.
+
+    Making `FIXTURE` absolute, which it had to be, put `/home/somebody/quayline/...`
+    into the committed specimen. Continuous integration runs a different Python on a
+    different machine, so the gate failed on the artifact rather than on any code, and
+    the failure read as a stale commit when it was a machine-dependent page.
+
+    A generated file is committed, so anything environment-specific in it makes the
+    commit unreproducible. This checks both pages for a checkout path.
+    """
+    checkout = str(Path(__file__).resolve().parent.parent)
+    for name in ("web/specimen.html", "web/index.html"):
+        body = Path(name).read_text(encoding="utf-8")
+        assert checkout not in body, f"{name} embeds this machine's checkout path"
+        assert "/home/" not in body, f"{name} embeds a home directory path"

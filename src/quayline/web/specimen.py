@@ -64,7 +64,27 @@ FIXTURE = Path(
     or Path(__file__).resolve().parents[3] / "tests/fixtures/born_digital_invoice.pdf"
 )
 
+
 #: Terminal and carrier for the fixture, matching what the transcribed corpus holds.
+def _display_path(path: Path) -> str:
+    """The repository-relative path, for a page a reader will look for the file in.
+
+    Issue 208: making ``FIXTURE`` absolute, which it had to be, put the machine's
+    absolute path into the generated specimen. Continuous integration runs 3.12 and
+    the checkout lives somewhere else, so the committed page stopped matching its own
+    generator and the gate failed on the artifact rather than on any code.
+
+    A path on the page is documentation, and documentation about a file should be
+    findable rather than machine-specific. The full path is still what gets opened;
+    this is only what gets printed.
+    """
+    resolved = Path(path).resolve()
+    for parent in resolved.parents:
+        if (parent / "tests" / "fixtures").is_dir():
+            return str(resolved.relative_to(parent))
+    return resolved.name
+
+
 FIXTURE_CARRIER = "Maersk"
 FIXTURE_TERMINAL = "newark"
 
@@ -256,7 +276,7 @@ def build_specimen(carrier: str = FIXTURE_CARRIER, terminal: str = FIXTURE_TERMI
         carrier=carrier,
         terminal=terminal,
         invoice_ref=result.invoice_ref,
-        fixture_path=str(FIXTURE),
+        fixture_path=_display_path(FIXTURE),
         free_time_expires=result.computed_free_time_expiry.isoformat()
         if result.computed_free_time_expiry
         else "",
