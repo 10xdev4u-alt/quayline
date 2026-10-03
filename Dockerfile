@@ -7,7 +7,7 @@
 # would be the same command with a disclaimer, and a reader would wonder what it was
 # hiding. The build installs the project itself and nothing resolves from an index.
 
-FROM python:3.13-slim-bookworm AS build
+FROM python:3.13-slim-bookworm@sha256:5024f48ba9441d4b13a95d3945abc6365538e3a31109833367a1923523c6efed AS build
 
 WORKDIR /src
 
@@ -26,7 +26,10 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir --no-deps . && pip install --no-cache-dir --no-deps pytest
 
-FROM python:3.13-slim-bookworm
+# Same digest as the build stage, on CodeRabbit's finding. A floating tag means a rebuild
+# months from now produces a different base, and "it worked when we wrote it" becomes
+# untestable. The digest is amd64; a multi-arch manifest is the next thing to do here.
+FROM python:3.13-slim-bookworm@sha256:5024f48ba9441d4b13a95d3945abc6365538e3a31109833367a1923523c6efed
 
 # curl is for the health check only. Python can do it without one, and a base image
 # that carries a web client it does not otherwise need is a base image with a client.

@@ -15,7 +15,8 @@ import socket
 import threading
 import urllib.request
 from collections.abc import Iterator
-from http.server import HTTPServer
+from contextlib import suppress
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
@@ -88,23 +89,80 @@ def test_the_health_check_reaches_through_the_forwarder(bridged: int) -> None:
         assert b"<form" in response.read()
 
 
-def test_a_forwarded_body_arrives_whole(bridged: int, upstream: int) -> None:
-    """Uploads are up to 8 MiB and the pipe has to survive one.
+def test_a_forwarded_body_arrives_byte_for_byte() -> None:
+    """CodeRabbit found that the first version of this could not fail.
 
-    A chunk-size bug here would truncate large invoices and leave the carrier's
-    totals unreadable, which reads as a parsing defect rather than a network one.
+    It posted `application/octet-stream`, which `_body()` rejects before reading a
+    byte, and then accepted any error status as proof the pipe worked. A forwarder that
+    truncated every upload to zero bytes would have passed it.
+
+    So the assertion is on the bytes that arrived, checked by an upstream that counts
+    them, rather than on a status code that a rejection also produces.
     """
-    body = b"x" * (2 * 1024 * 1024)
-    connection = http.client.HTTPConnection("127.0.0.1", bridged, timeout=10)
+    received: list[bytes] = []
+
+    class CountingHandler(BaseHTTPRequestHandler):
+        """Reads with a deadline rather than trusting Content-Length.
+
+        A forwarder that drops bytes leaves the upstream blocked in
+        `rfile.read(length)` until the client gives up, so a plain read turns a
+        truncation bug into a 30 second timeout rather than a legible failure. Setting
+        a short deadline makes the test fail in about a second with the count it got.
+        """
+
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length", "0"))
+            self.connection.settimeout(5)
+            body = b""
+            with suppress(TimeoutError, OSError):
+                body = self.rfile.read(length)
+            received.append(body)
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args: object) -> None:
+            """Silence. The test asserts on bytes, not on stderr."""
+
+    upstream_port = _free_port()
+    server = HTTPServer(("127.0.0.1", upstream_port), CountingHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    listen = _free_port()
+    ready = threading.Event()
+    threading.Thread(
+        target=forward,
+        args=(listen, upstream_port),
+        kwargs={"host": "127.0.0.1", "ready": ready},
+        daemon=True,
+    ).start()
+    assert ready.wait(timeout=10)
+
+    body = bytes(range(256)) * 8192  # 2 MiB, every byte value, not one repeated byte
+    connection = http.client.HTTPConnection("127.0.0.1", listen, timeout=30)
     connection.request(
         "POST",
-        "/audit",
+        "/whatever",
         body=body,
         headers={"Content-Type": "application/octet-stream", "Content-Length": str(len(body))},
     )
     response = connection.getresponse()
     response.read()
     connection.close()
-    # The intake refuses it, which is the correct answer. What matters is that a
-    # response came back at all rather than a truncated or reset connection.
-    assert response.status in (400, 413, 415)
+
+    assert received, "the upstream never received a request"
+    assert received[0] == body, (
+        f"the forwarder delivered {len(received[0])} bytes of {len(body)}, or the wrong ones"
+    )
+    server.shutdown()
+    server.server_close()
+
+
+def _free_port() -> int:
+    """Bind and release, so the port is very likely free for the next bind."""
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port: int = probe.getsockname()[1]
+    probe.close()
+    return port

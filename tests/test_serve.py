@@ -500,3 +500,22 @@ def test_healthz_needs_no_carrier_and_no_upload(server: str) -> None:
     """It is a GET with no parameters, so a probe needs no knowledge of the product."""
     with urllib.request.urlopen(f"{server}/healthz") as response:
         assert response.status == 200
+
+
+def test_healthz_says_it_is_json(server: str) -> None:
+    """A JSON body labelled text/html is a lie a client cannot check.
+
+    CodeRabbit found this on #211 and it is right. A JSON health client that trusts the
+    content type is entitled to reject a `text/html` response, and a probe that fails on
+    a healthy service turns into an operator restarting something that is fine.
+    """
+    with urllib.request.urlopen(f"{server}/healthz") as response:
+        assert response.status == 200
+        assert response.headers.get_content_type() == "application/json"
+        assert json.loads(response.read().decode())["status"] == "ok"
+
+
+def test_the_pages_stay_html(server: str) -> None:
+    """The control, so the fix above did not relabel the pages."""
+    with urllib.request.urlopen(f"{server}/") as response:
+        assert response.headers.get_content_type() == "text/html"

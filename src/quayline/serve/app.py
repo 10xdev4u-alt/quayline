@@ -210,7 +210,11 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
                 # check that audits an invoice would fail for a reason an operator
                 # cannot act on from outside, and a check that loads the corpus makes
                 # start-up ordering matter.
-                self._html(200, '{"status": "ok"}')
+                #
+                # Sent as JSON rather than through `_html`. The body is JSON, so saying
+                # text/html is a false header, and a client that trusts it is entitled
+                # to reject a healthy service, which looks like an outage.
+                self._send(200, '{"status": "ok"}', "application/json; charset=utf-8")
                 return
             self._not_found(self.path, "/, /specimen, /healthz, /audit or /letter")
 
