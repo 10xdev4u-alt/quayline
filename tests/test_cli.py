@@ -80,6 +80,10 @@ def test_a_clean_document_exits_zero(tmp_path: Path) -> None:
             # so a document the test called clean was non-compliant and the 541.5
             # check was right to find it.
             "Due Date: 2026-08-19",
+            # 541.6(a)(3), the port of discharge, imports only. Issue 212 made it the
+            # fourteenth checked clause, so a synthetic invoice that omits it is no
+            # longer clean either.
+            "Port of Discharge: Newark, NJ",
             "Container Availability Date: 2026-06-30",
             # Four free days from 06-30 on a Monday to Saturday basis expires 07-04,
             # so charging from 07-05 is consistent with what the carrier disclosed.
@@ -215,6 +219,10 @@ def test_an_unheld_rate_rule_is_a_finding_and_never_a_guessed_rate(
             # so a document the test called clean was non-compliant and the 541.5
             # check was right to find it.
             "Due Date: 2026-08-19",
+            # 541.6(a)(3), the port of discharge, imports only. Issue 212 made it the
+            # fourteenth checked clause, so a synthetic invoice that omits it is no
+            # longer clean either.
+            "Port of Discharge: Newark, NJ",
             "Container Availability Date: 2026-06-30",
             "Allowed Free Time: 4 days",
             "Start Date of Free Time: 2026-06-30",
@@ -301,6 +309,10 @@ def test_a_clean_document_packet_says_there_is_no_dispute(tmp_path: Path) -> Non
             # so a document the test called clean was non-compliant and the 541.5
             # check was right to find it.
             "Due Date: 2026-08-19",
+            # 541.6(a)(3), the port of discharge, imports only. Issue 212 made it the
+            # fourteenth checked clause, so a synthetic invoice that omits it is no
+            # longer clean either.
+            "Port of Discharge: Newark, NJ",
             "Container Availability Date: 2026-06-30",
             "Allowed Free Time: 4 days",
             "Start Date of Free Time: 2026-06-30",
@@ -342,6 +354,10 @@ def _contested_pdf(tmp_path: Path) -> Path:
             # so a document the test called clean was non-compliant and the 541.5
             # check was right to find it.
             "Due Date: 2026-08-19",
+            # 541.6(a)(3), the port of discharge, imports only. Issue 212 made it the
+            # fourteenth checked clause, so a synthetic invoice that omits it is no
+            # longer clean either.
+            "Port of Discharge: Newark, NJ",
             "Container Availability Date: 2026-07-30",
             "Allowed Free Time: 4 days",
             "Start Date of Free Time: 2026-07-01",

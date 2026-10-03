@@ -63,6 +63,7 @@ from datetime import date
 from decimal import Decimal
 
 from quayline.engine.daycount import DayCountResult
+from quayline.engine.disclosure import UncheckedField
 from quayline.evidence.checklist import Ground
 from quayline.regulation.checklist import ChecklistField
 from quayline.regulation.kill_switch import Obligation
@@ -140,12 +141,12 @@ class AuditResult:
     #: about whether the obligation survived.
     obligation: Obligation = Obligation.INTACT
 
-    #: 541.6 disclosures this build cannot check, seven of the twenty. Issue 207.
+    #: 541.6 clauses this build cannot check, each with the reason. Issue 212.
     #:
-    #: A result with no omissions and no field here would read as "the invoice complies",
-    #: which is a claim about seven clauses nobody looked at. The two travel together so
+    #: A result with no omissions and nothing here would read as "the invoice complies",
+    #: which is a claim about six clauses nobody looked at. The two travel together so
     #: that reading is not available.
-    unverified_fields: tuple[ChecklistField, ...] = ()
+    unverified_fields: tuple[UncheckedField, ...] = ()
 
     findings: tuple[Finding, ...] = ()
 

@@ -28,6 +28,7 @@ import pytest
 
 from quayline.cli.audit_render import resolve_disclosed
 from quayline.engine.daycount import Direction
+from quayline.engine.disclosure import VERIFIABLE
 from quayline.evidence.packet import render
 from quayline.regulation.kill_switch import consequence_text
 from quayline.serve.audit_runner import Findings, find_runner
@@ -65,6 +66,13 @@ def _result_page() -> str:
     findings = find_runner(resolve_disclosed)(FIXTURE.read_bytes(), "Maersk", "newark")
     return result_page(findings)
 
+
+#: How many of the twenty 541.6 clauses the engine checks, read from the engine.
+#:
+#: The page renders this number rather than having it typed into the template, so a
+#: coverage change moves the page with it. Asserting it here against the engine rather
+#: than against a literal is the same idea one level up.
+CHECKED_CLAUSES = len(VERIFIABLE) + 1
 
 #: Every page that renders components rather than prose. The result page is here for
 #: the same reason the landing page was added: it emitted a button and a footer and
@@ -667,3 +675,61 @@ def test_generated_pages_carry_no_machine_specific_path() -> None:
         body = Path(name).read_text(encoding="utf-8")
         assert checkout not in body, f"{name} embeds this machine's checkout path"
         assert "/home/" not in body, f"{name} embeds a home directory path"
+
+
+def test_the_page_states_how_many_clauses_were_checked() -> None:
+    """A reader deciding whether to send this needs the denominator, not just the count.
+
+    The number is read from the code rather than written into the template, so it cannot
+    drift when coverage changes. That is the same defect as the README's stale claim,
+    which `test_readme.py` now guards.
+    """
+    checked = CHECKED_CLAUSES
+    html = _result_page()
+    assert f"{checked} of 20" in html, (
+        "the page must say how many of the twenty clauses it checked, read from the code"
+    )
+
+
+def test_the_page_lists_the_clauses_it_did_not_check() -> None:
+    """And names them, so the reader can see what was not looked at."""
+    html = _result_page()
+    for cite in ("541.6(d)(2)", "541.6(e)(2)"):
+        assert cite in html, f"{cite} is unchecked and the page does not say so"
+
+
+def test_the_page_gives_the_reason_a_clause_was_not_checked() -> None:
+    """A bare list of unchecked clauses is a coverage claim with no defence behind it.
+
+    The QR code is the one worth reading: 541.6(d)(2) is satisfied by a QR code or a
+    watermark, neither of which appears in a text layer, so its absence proves nothing.
+    """
+    html = _result_page()
+    assert "QR code" in html, "the reason 541.6(d)(2) cannot be checked is not on the page"
+
+
+def test_the_page_never_claims_the_invoice_complies() -> None:
+    """Six of the twenty are unchecked, so a bare compliance claim is false.
+
+    Matches on a claim, not on the phrase. The first version of this test looked for
+    "invoice complies" anywhere and failed on the page's own disclaimer, which says
+    finding nothing wrong is *not* a statement that the invoice complies. A guard that
+    cannot distinguish the claim from its refutation is worse than no guard, because
+    the fix is to delete the honest sentence.
+    """
+    html = _result_page().lower()
+    claims = (
+        "the invoice complies",
+        "invoice is compliant",
+        "fully compliant",
+        "meets all requirements",
+        "complies with part 541",
+    )
+    for phrase in claims:
+        assert phrase not in html, f"the page claims {phrase!r} while six clauses are unchecked"
+
+
+def test_the_page_carries_the_disclaimer_the_guard_ruled_out() -> None:
+    """The control. If the guard above ever starts failing on this, it is the guard."""
+    html = _result_page().lower()
+    assert "not a statement about compliance" in html

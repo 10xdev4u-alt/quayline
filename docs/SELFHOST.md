@@ -34,7 +34,7 @@ means the process is not running rather than that an invoice was odd.
 
 | | |
 |---|---|
-| Checks the 541.6 invoice disclosures | yes, 13 of the 20 clauses |
+| Checks the 541.6 invoice disclosures | yes, 14 of the 20 clauses. Six cannot be checked for absence from the text, and the page names them. |
 | Checks the free time arithmetic | yes |
 | Recomputes the money | Maersk only, from transcribed tariff rates |
 | Carrier rate coverage | 1 of 9 carriers |
