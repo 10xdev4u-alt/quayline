@@ -10,6 +10,7 @@ checksum exists to prevent.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -269,8 +270,18 @@ def test_issue_39_is_the_provenance() -> None:
 
 
 def test_corpus_dir_points_at_the_real_directory() -> None:
+    """Absolute, and real. Issue 208 changed the first half and this caught the second.
+
+    The assertion used to be `CORPUS_DIR == "tests/fixtures/tariffs"`, which is a
+    string comparison that passed whether or not the directory existed.
+    """
     assert (Path(__file__).resolve().parent / "fixtures" / "tariffs").is_dir()
-    assert CORPUS_DIR == "tests/fixtures/tariffs"
+    resolved = Path(CORPUS_DIR)
+    assert resolved.is_absolute(), (
+        "a relative corpus path resolves against the working directory, so the engine "
+        "only works when run from the repository root"
+    )
+    assert resolved.is_dir(), f"{resolved} does not exist"
 
 
 def test_tier_objects_round_trip() -> None:
@@ -280,3 +291,22 @@ def test_tier_objects_round_trip() -> None:
     assert isinstance(block.tiers[0], Tier)
     assert str(block.tiers[0].rate) == "0"
     assert [str(t.rate) for t in block.tiers] == ["0", "190", "250", "280"]
+
+
+def test_the_corpus_is_found_from_any_working_directory(tmp_path: Path) -> None:
+    """Issue 208: the corpus path was relative, so the engine worked only from the
+    repository root.
+
+    Found while building the container image. Every audit run from anywhere else
+    resolved no tariff and the failure was silent: the command printed a confident
+    `tariff_unresolved` rather than refusing, so a self-hoster would conclude their
+    Maersk invoice had no matching rate rather than that the tool could not find its
+    own data. A silent wrong answer is worse than a crash.
+    """
+    here = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        blocks = load_corpus()
+    finally:
+        os.chdir(here)
+    assert blocks, "no rate blocks found outside the repository root"

@@ -35,6 +35,7 @@ them, and that we do not infer ours from them. None has been measured.
 
 from __future__ import annotations
 
+import os
 from dataclasses import KW_ONLY, dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -52,9 +53,38 @@ from quayline.tariffs.resolution import RateQuery, resolve
 
 #: The fixture this page audits. Named here so the page and the tests cannot point at
 #: different files.
-FIXTURE = Path("tests/fixtures/born_digital_invoice.pdf")
+#: Resolved against this file rather than the working directory. Issue 208: it was the
+#: string ``Path(<repo>/tests/fixtures/...)``, which resolved only from
+#: the repository root. In the container the landing page raised FileNotFoundError and
+#: served nothing at all, because this is the technical specimen and the
+#: file was not where the working directory said it was. Overridable for a bundle that
+#: is not a checkout.
+FIXTURE = Path(
+    os.environ.get("QUAYLINE_FIXTURE")
+    or Path(__file__).resolve().parents[3] / "tests/fixtures/born_digital_invoice.pdf"
+)
+
 
 #: Terminal and carrier for the fixture, matching what the transcribed corpus holds.
+def _display_path(path: Path) -> str:
+    """The repository-relative path, for a page a reader will look for the file in.
+
+    Issue 208: making ``FIXTURE`` absolute, which it had to be, put the machine's
+    absolute path into the generated specimen. Continuous integration runs 3.12 and
+    the checkout lives somewhere else, so the committed page stopped matching its own
+    generator and the gate failed on the artifact rather than on any code.
+
+    A path on the page is documentation, and documentation about a file should be
+    findable rather than machine-specific. The full path is still what gets opened;
+    this is only what gets printed.
+    """
+    resolved = Path(path).resolve()
+    for parent in resolved.parents:
+        if (parent / "tests" / "fixtures").is_dir():
+            return str(resolved.relative_to(parent))
+    return resolved.name
+
+
 FIXTURE_CARRIER = "Maersk"
 FIXTURE_TERMINAL = "newark"
 
@@ -246,7 +276,7 @@ def build_specimen(carrier: str = FIXTURE_CARRIER, terminal: str = FIXTURE_TERMI
         carrier=carrier,
         terminal=terminal,
         invoice_ref=result.invoice_ref,
-        fixture_path=str(FIXTURE),
+        fixture_path=_display_path(FIXTURE),
         free_time_expires=result.computed_free_time_expiry.isoformat()
         if result.computed_free_time_expiry
         else "",

@@ -45,16 +45,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
 from quayline.tariffs.blocks import RateBlock, Tier
 
-#: Where fixtures live, relative to the repository root. Checked in, because a
-#: corpus that is not in version control is not a corpus, it is a folder on
-#: somebody's machine.
-CORPUS_DIR = "tests/fixtures/tariffs"
+#: Where the transcribed rates live. Checked in, because a corpus that is not in
+#: version control is not a corpus, it is a folder on somebody's machine.
+#:
+#: Resolved against this file rather than left relative to the working directory.
+#: Issue 208: it used to be the string ``"tests/fixtures/tariffs"``, which meant the
+#: engine resolved rates only when run from the repository root. From anywhere else,
+#: including from inside a container, every audit came back ``tariff_unresolved`` and
+#: said so confidently, so the failure mode looked like "your carrier has no matching
+#: rate" rather than "this program cannot find its own data".
+#:
+#: ``parents[3]`` is the repository root from ``src/quayline/tariffs/corpus.py``. A
+#: checkout, an installed package and the container image all keep that shape; a
+#: zipapp or a PyInstaller bundle does not, and `QUAYLINE_CORPUS_DIR` is the override
+#: for those.
+_DEFAULT_ROOT = Path(__file__).resolve().parents[3]
+CORPUS_DIR = os.environ.get("QUAYLINE_CORPUS_DIR") or str(_DEFAULT_ROOT / "tests/fixtures/tariffs")
 
 
 class FixtureError(ValueError):

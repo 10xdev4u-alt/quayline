@@ -54,15 +54,40 @@ carrier data produces plausible, silent, wrong answers.
 ## Status
 
 The core engine is complete, all 42 issues of milestone M1 closed. The ingestion
-layer is eight of ten. There is no entry point: no function takes a document and
-returns an audit result, so the pieces are built and nothing joins them. Issue 167
-is that gap. The evidence and filing milestone is three of fifteen, and the
-integrations milestone has not started.
+layer is eight of ten.
+
+There is an entry point. `engine/audit.py` takes a document and returns an audit
+result, `quayline audit` runs it from a terminal, and `quayline serve` runs it from a
+browser. Issue 167 closed that gap, and this paragraph went on claiming otherwise
+afterwards, which is the failure this project spends its time auditing in other
+people's invoices.
+
+What is true today. The 541.6 disclosure check covers 13 of the 20 required clauses and
+needs no tariff, so it runs for all nine carriers. The free time arithmetic runs for all
+nine. The money recomputation runs for **one**, Maersk, because that is the only carrier
+whose tariff has been transcribed. `quayline coverage` prints the position, and so does
+the landing page.
 
 Before any of it matters, ten real invoices have to be audited by hand and shown to
 collect. The pass mark and the kill criteria are written down in
 [006-phase-zero-gates.md](docs/research/006-phase-zero-gates.md), dated, before the
 experiment runs. The issue set on GitHub is the backlog.
+
+## Running it
+
+```
+docker compose up --build     # then open http://127.0.0.1:8765/
+```
+
+One command, no configuration, nothing stored between requests. Full instructions,
+including how to reach it from another machine, are in
+[docs/SELFHOST.md](docs/SELFHOST.md).
+
+Without Docker:
+
+```
+quayline serve
+```
 
 ## Building and validating
 
