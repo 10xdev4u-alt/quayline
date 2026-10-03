@@ -482,3 +482,21 @@ def test_an_unknown_path_is_a_clean_404_not_a_traceback(server: str) -> None:
         assert "no route" in exc.read().decode()
     else:
         raise AssertionError("expected a 404")
+
+
+def test_healthz_answers_without_touching_the_engine(server: str) -> None:
+    """The container health check, and it must be cheap and total.
+
+    It runs on every poll, so anything that loads the tariff corpus or runs an audit
+    makes start-up ordering matter and turns a restart loop into a confusing failure.
+    """
+    with urllib.request.urlopen(f"{server}/healthz") as response:
+        assert response.status == 200
+        body = response.read().decode()
+    assert json.loads(body)["status"] == "ok"
+
+
+def test_healthz_needs_no_carrier_and_no_upload(server: str) -> None:
+    """It is a GET with no parameters, so a probe needs no knowledge of the product."""
+    with urllib.request.urlopen(f"{server}/healthz") as response:
+        assert response.status == 200

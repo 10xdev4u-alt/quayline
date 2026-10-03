@@ -1,0 +1,31 @@
+# Quayline, self-hosted. Issue 208.
+#
+# One command: docker compose up --build
+#
+# No environment variables are required and there is nothing to configure. The server
+# has no accounts, no database and no storage, so there is nothing to point at a file
+# and nothing that could be pointed at the wrong file.
+#
+# The port is published to the host and the intake bind stays on loopback inside the
+# container. That is deliberate and it is the whole security posture. A small forwarder
+# bridges the two, because Docker's port proxy connects to the container's own address
+# and cannot reach a loopback listener. See docs/SELFHOST.md before exposing this to a
+# network, and put authentication at a reverse proxy in front of it.
+
+services:
+  quayline:
+    build: .
+    image: quayline:local
+    container_name: quayline
+    ports:
+      # Bound to loopback on the host too, so publishing this does not by itself put an
+      # unauthenticated intake on a network. Change this only with a proxy in front.
+      - "127.0.0.1:8765:8765"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

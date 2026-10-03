@@ -35,6 +35,7 @@ them, and that we do not infer ours from them. None has been measured.
 
 from __future__ import annotations
 
+import os
 from dataclasses import KW_ONLY, dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -52,7 +53,16 @@ from quayline.tariffs.resolution import RateQuery, resolve
 
 #: The fixture this page audits. Named here so the page and the tests cannot point at
 #: different files.
-FIXTURE = Path("tests/fixtures/born_digital_invoice.pdf")
+#: Resolved against this file rather than the working directory. Issue 208: it was the
+#: string ``Path(<repo>/tests/fixtures/...)``, which resolved only from
+#: the repository root. In the container the landing page raised FileNotFoundError and
+#: served nothing at all, because this is the technical specimen and the
+#: file was not where the working directory said it was. Overridable for a bundle that
+#: is not a checkout.
+FIXTURE = Path(
+    os.environ.get("QUAYLINE_FIXTURE")
+    or Path(__file__).resolve().parents[3] / "tests/fixtures/born_digital_invoice.pdf"
+)
 
 #: Terminal and carrier for the fixture, matching what the transcribed corpus holds.
 FIXTURE_CARRIER = "Maersk"

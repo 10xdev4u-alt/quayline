@@ -16,6 +16,7 @@ only reason the hero cannot disagree with the engine.
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from decimal import Decimal
 from functools import lru_cache
@@ -30,7 +31,16 @@ from quayline.web.daystrip import DayStrip, build_strip
 
 #: The fixture the test suite already audits. Born digital, one real transcribed Maersk
 #: rate, and nothing belonging to a client.
-FIXTURE = Path("tests/fixtures/born_digital_invoice.pdf")
+#: Resolved against this file rather than the working directory. Issue 208: it was the
+#: string ``Path(<repo>/tests/fixtures/...)``, which resolved only from
+#: the repository root. In the container the landing page raised FileNotFoundError and
+#: served nothing at all, because this is the worked example on the landing page and the intake and the
+#: file was not where the working directory said it was. Overridable for a bundle that
+#: is not a checkout.
+FIXTURE = Path(
+    os.environ.get("QUAYLINE_FIXTURE")
+    or Path(__file__).resolve().parents[3] / "tests/fixtures/born_digital_invoice.pdf"
+)
 
 #: Stated on the page itself, because the numbers are this example and not a customer.
 #: An invented client, or a recovery percentage, is the fastest way to lose the only

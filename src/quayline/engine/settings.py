@@ -22,12 +22,27 @@ settings object that can be inconsistent mid audit.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "audit.json"
+#: Resolved against the package rather than the working directory, and overridable.
+#:
+#: Issue 208: this pointed into the repository layout, which is right for a checkout
+#: and wrong for an installed distribution. In the container the package sits at
+#: ``/opt/venv/lib/python3.13/site-packages/quayline``, so ``parents[3]`` is
+#: ``/opt/venv/lib/python3.13`` and the loader raised at import: the process refused
+#: to start with no audit config. The image sets ``QUAYLINE_CONFIG`` to where it put
+#: the file.
+#:
+#: Still refuses rather than defaulting. A missing config means the engine would file
+#: on a band nobody chose, and that is the whole reason the number lives in a file.
+CONFIG_PATH = Path(
+    os.environ.get("QUAYLINE_CONFIG")
+    or Path(__file__).resolve().parents[3] / "config" / "audit.json"
+)
 
 
 class SettingsError(ValueError):

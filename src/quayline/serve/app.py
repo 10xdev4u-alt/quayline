@@ -204,7 +204,15 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
             if self.path == "/specimen":
                 self._html(200, specimen_page())
                 return
-            self._not_found(self.path, "/, /specimen, /audit or /letter")
+            if self.path == "/healthz":
+                # The container health check. It answers from the process being up and
+                # nothing else: no engine, no tariff corpus, no filesystem. A health
+                # check that audits an invoice would fail for a reason an operator
+                # cannot act on from outside, and a check that loads the corpus makes
+                # start-up ordering matter.
+                self._html(200, '{"status": "ok"}')
+                return
+            self._not_found(self.path, "/, /specimen, /healthz, /audit or /letter")
 
         def _body(self) -> bytes | None:
             """The raw request body, or ``None`` having refused it.

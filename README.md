@@ -64,6 +64,22 @@ collect. The pass mark and the kill criteria are written down in
 [006-phase-zero-gates.md](docs/research/006-phase-zero-gates.md), dated, before the
 experiment runs. The issue set on GitHub is the backlog.
 
+## Running it
+
+```
+docker compose up --build     # then open http://127.0.0.1:8765/
+```
+
+One command, no configuration, nothing stored between requests. Full instructions,
+including how to reach it from another machine, are in
+[docs/SELFHOST.md](docs/SELFHOST.md).
+
+Without Docker:
+
+```
+quayline serve
+```
+
 ## Building and validating
 
 ```
