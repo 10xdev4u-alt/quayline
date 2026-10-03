@@ -126,6 +126,12 @@ def audit(
     bound = bind_ledger(text)
 
     if bound.invoice_date is None:
+        # An `OmittedError` and not an `UnreadableDocument`, which issue 214 made the
+        # distinction. `bind_ledger` returning at all is the proof: it demands the
+        # container, the free time window and the total before it will return, so a
+        # document that reached this line is one this binder read. Its absences are
+        # therefore real and 541.5 applies. A document we do not understand never gets
+        # here; it raised inside the binder.
         raise OmittedError("invoice date", CITE_INVOICE_DATE)
 
     disclosures = TimingDisclosures(

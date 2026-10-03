@@ -28,7 +28,14 @@ from pathlib import Path
 
 import pytest
 
-from quayline.ingest.bind import BindError, OmittedError, bind_ledger
+from conftest import build_pdf
+from quayline.ingest.bind import (
+    BindError,
+    OmittedError,
+    UnreadableDocumentError,
+    bind_ledger,
+)
+from quayline.ingest.fields import read_fields
 from quayline.ingest.pdftext import TextLayer, TextLayerStatus, extract_text_layer
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -360,3 +367,113 @@ def test_the_rate_rule_is_carried_verbatim_not_normalised() -> None:
     # Outer whitespace is stripped by the label scan, inner spacing is preserved,
     # because the carrier's rule name is the thing we are obliged to quote.
     assert bind_ledger(text).rate_rule == "Maersk  US Newark Dry"
+
+
+# --- A document we cannot read is not an omission, issue 214 ------------------
+
+
+def realistic_invoice() -> bytes:
+    """A carrier invoice shaped the way carriers shape them.
+
+    Columns rather than `Label: value`, uppercase names, the carrier's own date style,
+    and different words for the same facts. This is not a hostile document. It is what
+    the binder meets on any real carrier PDF, and until issue 214 every test in this
+    repository used a fixture whose every line ended in a colon.
+
+    Written inline rather than checked in so a reviewer reads what it says, the same
+    reason `tests/conftest.py` builds PDFs by hand.
+    """
+    return build_pdf(
+        "MAERSK",
+        "DETENTION AND DEMURAGE INVOICE",
+        "",
+        "Invoice No.          3149275",
+        "Invoice Date         20-JUL-2026",
+        "",
+        "B/L Number           MAEU123456789",
+        "Container            MAEU1234567",
+        "Discharge Port       NEWARK, NJ",
+        "",
+        "Free Time Allowed    7 calendar days",
+        "Free Time Commences  30-JUN-2026",
+        "Free Time Expires    07-JUL-2026",
+        "Container Available  30-JUN-2026",
+        "",
+        "Detention Days       3",
+        "Per Day Charge       390.00",
+        "Detention Total      1,170.00",
+        "",
+        "Total Due            USD 1,170.00",
+        "Disputes: charges@maersk.example",
+    )
+
+
+def test_the_realistic_layout_is_not_read_as_a_fully_disclosed_invoice() -> None:
+    """The control. A realistic invoice is not label:value, so most of it is unread.
+
+    If this ever goes to zero the binder learned a second layout, which is issue 214's
+    second half and worth knowing about.
+    """
+
+    text = extract_text_layer(realistic_invoice())
+    fields = read_fields(text.lines)
+    assert len(fields.values) < 10, (
+        f"the binder now reads {len(fields.values)} labels out of this document, so either "
+        f"a second layout is supported and this test should be deleted, or something changed"
+    )
+
+
+def test_an_unreadable_field_is_not_reported_as_an_omission() -> None:
+    """The shipping blocker, and the assertion that matters most in this file.
+
+    Every line of the reference fixture is `Label: value`. A carrier invoice is not. On
+    one, the binder raised `OmittedError` for 541.6(b)(4), which says in its own message
+    that this is "a finding against the carrier, not an extraction fault". The document
+    states the free time start, as `Free Time Commences`. We simply could not read it.
+
+    That turns our extraction defect into an automatic 541.5 finding that eliminates the
+    obligation to pay, on a compliant invoice, and the claim gets filed.
+    """
+
+    text = extract_text_layer(realistic_invoice())
+    with pytest.raises(UnreadableDocumentError) as caught:
+        bind_ledger(text)
+
+    message = str(caught.value)
+
+    # Not "the word carrier is absent". The message does mention the carrier, to say it
+    # is *not* at fault, and a guard that forbade the word would push the wording
+    # towards vagueness rather than towards accuracy. What it must not do is assert the
+    # carrier withheld anything.
+    assert "does not state it" not in message, (
+        "that is `OmittedError`'s phrasing and it asserts the carrier withheld the field"
+    )
+    assert "makes the omission automatic" not in message, (
+        "an extraction failure must not claim the automatic consequence in 541.5"
+    )
+    assert "not a finding about the carrier" in message, (
+        "the message should say plainly that this is our limitation and not a finding"
+    )
+    assert "read" in message.lower(), "the message should say we could not read it"
+
+
+def test_an_extraction_failure_is_a_different_type_from_an_omission() -> None:
+    """Two failures, two types. `OmittedError` means the carrier did not disclose.
+
+    Collapsing them is what produced the bug, so the types must not be assignable to one
+    another and a caller must be able to tell them apart without reading a string.
+    """
+
+    assert issubclass(UnreadableDocumentError, BindError)
+    assert issubclass(OmittedError, BindError)
+    assert not issubclass(UnreadableDocumentError, OmittedError)
+    assert not issubclass(OmittedError, UnreadableDocumentError)
+
+
+def test_the_extraction_failure_names_the_field_it_could_not_read() -> None:
+    """The person holding the document has to know which line defeated us."""
+
+    text = extract_text_layer(realistic_invoice())
+    with pytest.raises(UnreadableDocumentError) as caught:
+        bind_ledger(text)
+    assert caught.value.field
