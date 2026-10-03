@@ -66,7 +66,9 @@ from quayline.regulation.checklist import (
 from quayline.regulation.kill_switch import Obligation, Omission, effect_of
 
 __all__ = [
+    "UNCHECKABLE",
     "DisclosureResult",
+    "UncheckedField",
     "VerifiableField",
     "check_disclosures",
     "determine_trade",
@@ -113,6 +115,7 @@ VERIFIABLE: tuple[VerifiableField, ...] = (
     VerifiableField("541.6(b)(6)", ("container availability date", "availability date")),
     VerifiableField("541.6(b)(7)", ("earliest return date",)),
     VerifiableField("541.6(b)(8)", ("charged dates", "dates charged")),
+    VerifiableField("541.6(a)(3)", ("port of discharge", "port", "discharge port")),
     VerifiableField("541.6(c)(1)", ("total", "total amount", "amount due")),
     VerifiableField("541.6(c)(2)", ("rate rule", "tariff rule", "rule")),
 )
@@ -142,9 +145,9 @@ class DisclosureResult:
 
     omissions: tuple[Omission, ...] = ()
     obligation: Obligation = Obligation.INTACT
-    #: Disclosures we cannot check. Surfaced so a caller reports coverage rather than
-    #: implying the checklist ran clean.
-    unverified: tuple[ChecklistField, ...] = ()
+    #: Disclosures we cannot check, each with the reason. Surfaced so a caller reports
+    #: coverage rather than implying the checklist ran clean.
+    unverified: tuple[UncheckedField, ...] = ()
     warnings: tuple[str, ...] = ()
     #: Whether a complete text layer backed this result. False means no omissions were
     #: raised and none should be.
@@ -155,15 +158,88 @@ class DisclosureResult:
         return self.obligation is Obligation.ELIMINATED
 
 
-def unchecked() -> tuple[ChecklistField, ...]:
-    """The 541.6 fields this module cannot check.
+@dataclass(frozen=True, slots=True)
+class UncheckedField:
+    """A 541.6 clause this module does not check, and why.
 
-    Seven of twenty, and naming them is the point. A caller that says "no omissions"
-    without also saying these are unverified has told the reader the invoice complies,
-    which is a claim about seven clauses nobody looked at.
+    Issue 212. ``unchecked()`` used to return the field alone, which reads as a roadmap
+    item. Six of the seven are not one. They are clauses where **absence cannot be
+    established from a born-digital text layer at all**, and the reason is in the words of
+    the regulation rather than in our schedule.
+
+    The distinction is worth a type. "We did not get to it" and "doing it would accuse a
+    carrier of something it did not do" are different states, and a caller reporting
+    coverage has to be able to say which.
+
+    The asymmetry is what decides them. A missed omission is a false negative and the
+    reader loses an argument. A claimed omission that is not there is a false accusation,
+    printed, signed and sent, and 541.5 makes the remedy automatic, so it is not
+    corrected by disputing it. A check is added only when it cannot produce the second.
+    """
+
+    field: ChecklistField
+    #: Why absence is not detectable, in one sentence a reader can check against the CFR.
+    reason: str
+
+    @property
+    def cite(self) -> str:
+        return self.field.cite
+
+
+#: Why each remaining clause cannot be checked for absence.
+#:
+#: Every reason quotes or paraphrases the clause's own wording, because the whole
+#: argument is that the regulation permits something we cannot see. ``541.6`` is in
+#: ``regulation/checklist.py`` and diffable against the eCFR.
+UNCHECKABLE: dict[str, str] = {
+    # 541.6(a)(3), the port of discharge, is not here. Issue 212 moved it into
+    # VERIFIABLE because it is a fact on the face of the document and absence of it is
+    # detectable. Everything below could not be moved for the reason given.
+    "541.6(a)(4)": (
+        "the basis for the billed party being liable is free prose, and the clause accepts "
+        "any wording, so a checker looking for particular words would miss a satisfied "
+        "clause and accuse a carrier that complied."
+    ),
+    "541.6(d)(1)": (
+        "541.6 requires an email address, a telephone number, or other appropriate contact "
+        "information, so an invoice carrying neither an address nor a number has still "
+        "complied and cannot be said to have omitted anything."
+    ),
+    "541.6(d)(2)": (
+        "541.6 permits a URL address, a QR code or a digital watermark. A QR code and a "
+        "watermark do not appear in a text layer at all, so a compliant invoice can leave "
+        "no trace here and a missing URL proves nothing."
+    ),
+    "541.6(d)(3)": (
+        "the timeframes are prose, and the clause asks only that they comply with the "
+        "billing practices in the part, so the words a compliant carrier uses are not "
+        "enumerable in advance."
+    ),
+    "541.6(e)(1)": (
+        "this is a certification that the charges are consistent with the Commission's "
+        "rules. It is a statement, not a fact, and a carrier can make it in any words."
+    ),
+    "541.6(e)(2)": (
+        "this is a certification that the billing party's performance did not cause the "
+        "charge. It is a statement about the past, not a disclosure on the face of the "
+        "document, and nothing on the invoice either satisfies or refutes it."
+    ),
+}
+
+
+def unchecked() -> tuple[UncheckedField, ...]:
+    """The 541.6 clauses this module does not check, each with the reason.
+
+    Naming them is the point, and so is the reason. A caller that reports "no omissions"
+    without also reporting these has told the reader the invoice complies, which is a
+    claim about clauses nobody checked.
     """
     checked = {v.cite for v in VERIFIABLE} | {_LEDGER_RATE_CITE}
-    return tuple(f for f in CHECKLIST if f.cite not in checked)
+    return tuple(
+        UncheckedField(field=f, reason=UNCHECKABLE[f.cite])
+        for f in CHECKLIST
+        if f.cite not in checked and UNCHECKABLE.get(f.cite)
+    )
 
 
 def determine_trade(ledger: BoundLedger) -> Trade | None:
@@ -200,6 +276,8 @@ def _field_is_stated(
     if spec.cite == "541.6(b)(6)" and trade is Trade.EXPORT:
         return True
     if spec.cite == "541.6(b)(7)" and trade is Trade.IMPORT:
+        return True
+    if spec.cite == "541.6(a)(3)" and trade is Trade.EXPORT:
         return True
     return spec.from_ledger and _ledger_proves(ledger, spec.cite)
 

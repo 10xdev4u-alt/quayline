@@ -31,8 +31,10 @@ from __future__ import annotations
 import base64
 import hashlib
 
+from quayline.engine.disclosure import VERIFIABLE
 from quayline.engine.result import CODE_FIELD_OMITTED
 from quayline.evidence.packet import GroundSection, render
+from quayline.regulation.checklist import CHECKLIST
 from quayline.regulation.kill_switch import Obligation, consequence_text
 from quayline.serve.audit_runner import Findings
 from quayline.web.design import stylesheet
@@ -79,6 +81,24 @@ RESULT_CSS = """
   border: 1px solid; padding: 0.2rem 0.45rem; }
 .flag.blocked { color: var(--signal); border-color: var(--signal); }
 .flag.clear   { color: var(--sea);   border-color: var(--sea); }
+
+/* What was not checked. The clauses we could not look at, and why, so the reader can
+   tell a clean result from a narrow one. */
+.coverage { margin-top: var(--gap-loose); border: 1px solid var(--edge);
+  background: var(--deck); }
+.coverage > header { padding: 0.8rem 1rem; border-bottom: 1px solid var(--edge);
+  display: flex; flex-wrap: wrap; gap: var(--gap); align-items: baseline;
+  justify-content: space-between; }
+.coverage h2 { margin: 0; font-size: 0.95rem; font-family: var(--font-stencil);
+  font-weight: var(--weight-stencil); letter-spacing: 0.02em; text-transform: uppercase; }
+.coverage .tally { font-family: var(--font-data); font-size: 0.8rem; color: var(--slate); }
+.coverage dl { display: grid; gap: 0.7rem; padding: 1rem; margin: 0;
+  grid-template-columns: minmax(7rem, max-content) 1fr; }
+.coverage dt { margin: 0; font-family: var(--font-data); font-size: 0.8rem;
+  color: var(--signal); }
+.coverage dd { margin: 0; color: var(--slate); max-width: var(--measure); }
+.coverage p.lede { margin: 0; padding: 1rem 1rem 0; color: var(--slate);
+  max-width: var(--measure); }
 
 /* The 541.5 notice. An eliminated obligation is the strongest thing this page can
    say, and it needs to be a statement rather than a word in a column. */
@@ -268,6 +288,38 @@ COPY_SCRIPT = """
 """
 
 
+def _coverage(findings: Findings) -> str:
+    """Which of the twenty clauses were checked, and why the others were not.
+
+    Issue 212. The tally is read from the code rather than typed here, because a coverage
+    figure written into a template is a figure that will be wrong the moment coverage
+    changes, and nothing will notice. The onboarding document sat wrong for a year on
+    exactly this.
+
+    The reasons are the substance. Six clauses cannot be checked for absence from a text
+    layer, and the sharpest is 541.6(d)(2), which the regulation lets a carrier satisfy
+    with a QR code or a watermark. Neither appears in a text layer, so a missing URL says
+    nothing about whether the carrier complied. Saying "we found nothing wrong" without
+    this would be claiming compliance on six clauses nobody looked at.
+    """
+    unverified = findings.result.unverified_fields
+    checked = len(VERIFIABLE) + 1
+    rows = "".join(
+        f"<dt>{esc(entry.cite)}</dt><dd>{esc(entry.reason)}</dd>" for entry in unverified
+    )
+    return (
+        '<section class="coverage">'
+        "<header><h2>What was not checked</h2>"
+        f'<span class="tally">{checked} of {len(CHECKLIST)} clauses checked</span>'
+        "</header>"
+        '<p class="lede">These clauses of 46 CFR 541.6 cannot be checked for absence '
+        "from an invoice&#x27;s text, so a clean result on the clauses we did check is "
+        "not a statement about compliance.</p>"
+        f"<dl>{rows}</dl>"
+        "</section>"
+    )
+
+
 def _void_notice(findings: Findings) -> str:
     """What 541.5 does, when it fires. Nothing at all when it does not.
 
@@ -322,6 +374,7 @@ def result_page(findings: Findings) -> str:
         # Which invoice was actually audited. A client who uploaded the wrong PDF
         # should find out here rather than in the carrier's reply.
         f"{_void_notice(findings)}\n"
+        f"{_coverage(findings)}\n"
         f"{rail(_rail_pairs(findings))}\n"
         f"{day_cells(findings.strip.days if findings.strip else [], flagged)}\n"
         f"{legend()}\n"

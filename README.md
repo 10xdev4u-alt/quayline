@@ -62,8 +62,10 @@ browser. Issue 167 closed that gap, and this paragraph went on claiming otherwis
 afterwards, which is the failure this project spends its time auditing in other
 people's invoices.
 
-What is true today. The 541.6 disclosure check covers 13 of the 20 required clauses and
-needs no tariff, so it runs for all nine carriers. The free time arithmetic runs for all
+What is true today. The 541.6 disclosure check covers 14 of the 20 required clauses and
+needs no tariff, so it runs for all nine carriers. The other six cannot be checked for
+absence from an invoice's text at all, and the result page says which and why, because
+finding nothing wrong is not a statement that an invoice complies. The free time arithmetic runs for all
 nine. The money recomputation runs for **one**, Maersk, because that is the only carrier
 whose tariff has been transcribed. `quayline coverage` prints the position, and so does
 the landing page.

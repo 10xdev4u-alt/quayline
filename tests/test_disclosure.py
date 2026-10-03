@@ -41,7 +41,7 @@ from quayline.engine.disclosure import (
 from quayline.ingest.bind import BoundLedger, bind_ledger
 from quayline.ingest.fields import Fields, read_fields
 from quayline.ingest.pdftext import TextLayer, TextLayerStatus, extract_text_layer
-from quayline.regulation.checklist import CHECKLIST, Trade, by_cite
+from quayline.regulation.checklist import CHECKLIST, Trade
 from quayline.regulation.kill_switch import Obligation, effect_of
 
 FIXTURE = Path(__file__).parent / "fixtures" / "born_digital_invoice.pdf"
@@ -56,11 +56,21 @@ def _ledger() -> BoundLedger:
 
 
 def _fields(extra: dict[str, str] | None = None) -> Fields:
-    """The fixture's labelled values, optionally with one more added."""
+    """The fixture's labelled values, optionally with one more added.
+
+    Injected labels are lowercased the way ``read_fields`` lowercases real ones.
+
+    Without that, ``_fields({"Port of Discharge": ...})`` put a capitalised key into a
+    dict whose keys are all lowercased, so the label lookup missed and the test for "a
+    stated port is not an omission" passed for the wrong reason. It was asserting that a
+    port the carrier wrote down still counted as omitted, which is the opposite of what
+    it claimed.
+    """
     base = read_fields(_layer().lines)
     if not extra:
         return base
-    return Fields(values={**base.values, **extra}, line_of=base.line_of)
+    merged = {**base.values, **{label.lower(): value for label, value in extra.items()}}
+    return Fields(values=merged, line_of=base.line_of)
 
 
 def _ledger_without(*labels: str) -> tuple[BoundLedger, Fields]:
@@ -91,20 +101,20 @@ def test_fixture_states_the_invoice_date() -> None:
     assert _ledger().invoice_date is not None
 
 
-def test_fixture_omits_the_invoice_due_date() -> None:
-    """541.6(b)(2), and it is the whole point of this issue.
+def test_fixture_omits_the_invoice_due_date_and_the_port() -> None:
+    """541.6(b)(2) and 541.6(a)(3), and it is the whole point of #207.
 
     The fixture states thirteen labelled fields including the invoice date, the free
-    time window, the charged dates, the rate rule, the rate and the total. It states
-    no due date. Under 541.6(b)(2) the due date is required, and under 541.5 a missing
-    required minimum eliminates the obligation to pay.
+    time window, the charged dates, the rate rule, the rate and the total. It states no
+    due date and no port of discharge.
 
-    The reference document in this repository, the one the day count, the recomputation
-    and the letter are all tested against, is non-compliant. That is not a defect in the
-    fixture. It is the finding, on a real document, with a real number attached.
+    So the reference document in this repository, the one the day count, the
+    recomputation and the letter are all tested against, is non-compliant in two places.
+    That is not a defect in the fixture. It is the finding, on a real document, with a
+    real number attached.
     """
     omissions = find_omissions(_ledger(), _fields(), complete=True)
-    assert [o.cite for o in omissions] == ["541.6(b)(2)"]
+    assert {o.cite for o in omissions} == {"541.6(b)(2)", "541.6(a)(3)"}
 
 
 def test_the_due_date_omission_eliminates_the_obligation() -> None:
@@ -121,8 +131,8 @@ def test_the_omission_names_the_clause_and_the_statement() -> None:
 
 def test_a_complete_invoice_is_intact() -> None:
     """Zero omissions on a document that complies is the case that keeps the check honest."""
-    # Add the one missing label, so the document complies.
-    full = _fields({"due date": "2026-08-19"})
+    # Add both missing labels, so the document complies.
+    full = _fields({"due date": "2026-08-19", "Port of Discharge": "Newark, NJ"})
     assert find_omissions(_ledger(), full, complete=True) == ()
     assert effect_of(()) is Obligation.INTACT
 
@@ -137,30 +147,26 @@ def test_a_complete_invoice_is_intact() -> None:
 def test_unextractable_disclosures_are_never_claimed_omitted(cite: str) -> None:
     """The test that stops this becoming an accusation machine.
 
-    The dispute contact, the digital means, the timeframes and both certifications are
-    not reachable from a bound ledger. The fixture states none of them. If this check
-    claimed them, it would assert that a carrier withheld five things we never looked
-    for, and 541.5 would fire on a fabrication.
+    The basis for the billed party, the dispute contact, the digital means, the
+    timeframes and both certifications cannot be detected as absent. The fixture states
+    none of them. If this check claimed them, it would assert a carrier withheld five
+    things we never looked for, and 541.5 would fire on a fabrication.
 
-    They are `UNVERIFIED` coverage, and `unchecked()` says so out loud.
+    They are reported by `unchecked()` with a reason each, so the caller is not left
+    claiming compliance on clauses nobody looked at.
     """
     omissions = find_omissions(_ledger(), _fields(), complete=True)
     assert cite not in {o.cite for o in omissions}
-    assert by_cite(cite) in unchecked()
+    assert cite in {u.cite for u in unchecked()}
 
 
-def test_port_of_discharge_is_never_claimed_omitted() -> None:
-    """541.6(a)(3) is import only and not extracted. Both reasons, and one test."""
-    omissions = find_omissions(_ledger(), _fields(), complete=True)
-    assert "541.6(a)(3)" not in {o.cite for o in omissions}
-
-
-def test_unchecked_and_omitted_never_overlap() -> None:
-    """A field is either checked or not checked. Never both, never neither silently."""
-    checked = {f.cite for f in VERIFIABLE} | {_LEDGER_RATE_CITE}
-    reported = {f.cite for f in unchecked()}
-    assert not checked & reported
-    assert checked | reported == {f.cite for f in CHECKLIST}
+def test_the_port_of_discharge_is_scoped_to_imports() -> None:
+    """541.6(a)(3) is import only. On an export invoice there is no discharge port, so
+    demanding one would fabricate a ground rather than find an omission."""
+    for trade in (Trade.IMPORT, Trade.EXPORT):
+        omissions = find_omissions(_ledger(), _fields(), complete=True, trade=trade)
+        found = "541.6(a)(3)" in {o.cite for o in omissions}
+        assert found is (trade is Trade.IMPORT), f"wrong for {trade}"
 
 
 # --- Incomplete documents ----------------------------------------------------
@@ -227,10 +233,91 @@ def test_incompleteness_is_reported_rather_than_hidden() -> None:
 
 def test_the_unverified_fields_are_reported_on_every_result() -> None:
     """A caller that reports zero omissions without these has claimed the invoice
-    complies on eight clauses nobody looked at."""
+    complies on six clauses nobody looked at."""
     result = check_disclosures(_ledger(), _layer())
     assert result.unverified == unchecked()
-    assert len(result.unverified) == 7
+    assert len(result.unverified) == 6
+
+
+# --- Why each clause is unchecked, issue 212 ---------------------------------
+
+
+def test_every_unchecked_clause_carries_a_reason() -> None:
+    """A bare list reads as a roadmap. Issue 212 exists because it was one.
+
+    "We did not get to it" and "doing it would accuse a carrier that complied" are
+    different states, and a caller reporting coverage has to be able to tell them apart.
+    """
+    for entry in unchecked():
+        assert entry.reason, f"{entry.cite} is unchecked with no reason given"
+
+
+def test_the_reason_quotes_the_words_that_make_it_unsafe() -> None:
+    """Each reason has to be checkable against the regulation, or it is an opinion.
+
+    The three that look checkable and are not all hinge on a word like "or": a clause
+    that permits an alternative we cannot see cannot have its absence established.
+    """
+    reasons = {u.cite: u.reason.lower() for u in unchecked()}
+
+    # 541.6(d)(1) permits "or other appropriate contact information".
+    assert "or other appropriate contact" in reasons["541.6(d)(1)"]
+
+    # 541.6(d)(2) permits "a URL address, QR code, or digital watermark", and a QR code
+    # does not appear in a text layer. This is the sharpest one in the set.
+    assert "qr code" in reasons["541.6(d)(2)"]
+    assert "text layer" in reasons["541.6(d)(2)"]
+
+
+def test_the_port_of_discharge_is_checked_now() -> None:
+    """541.6(a)(3) is a fact on the document, so absence is detectable. Issue 212."""
+    assert "541.6(a)(3)" in {v.cite for v in VERIFIABLE}
+    assert "541.6(a)(3)" not in {u.cite for u in unchecked()}
+
+
+def test_a_missing_port_of_discharge_is_an_omission_on_an_import() -> None:
+    """The control for the test above, and the reason the label exists.
+
+    The fixture states no port, so removing nothing and scoping to import finds it. That
+    is a false-negative-friendly check: it only fires on a stated label, so it can miss a
+    port the carrier disclosed in some other layout, which loses an argument. It cannot
+    claim an omission where the carrier wrote the port down.
+    """
+    omissions = find_omissions(_ledger(), _fields(), complete=True, trade=Trade.IMPORT)
+    assert "541.6(a)(3)" in {o.cite for o in omissions}
+
+
+def test_a_stated_port_of_discharge_is_not_an_omission() -> None:
+    """And it can pass, which is what stops it being a check that only ever fires."""
+    omissions = find_omissions(
+        _ledger(),
+        _fields({"Port of Discharge": "Newark, NJ"}),
+        complete=True,
+        trade=Trade.IMPORT,
+    )
+    assert "541.6(a)(3)" not in {o.cite for o in omissions}
+
+
+def test_an_export_invoice_owes_no_port_of_discharge() -> None:
+    """541.6(a)(3) is import only. Demanding it on an export is a fabricated ground."""
+    omissions = find_omissions(_ledger(), _fields(), complete=True, trade=Trade.EXPORT)
+    assert "541.6(a)(3)" not in {o.cite for o in omissions}
+
+
+def test_the_unchecked_reason_is_not_empty_for_every_clause() -> None:
+    """Every reason must be a sentence, not a placeholder that shipped."""
+    for entry in unchecked():
+        assert len(entry.reason) > 40, f"{entry.cite} has a reason too short to check"
+        assert entry.reason.endswith("."), f"{entry.cite} reason is not a sentence"
+
+
+def test_the_checked_and_unchecked_sets_partition_the_checklist() -> None:
+    """Every one of the twenty is in exactly one set, so nothing is silently lost."""
+    checked = {v.cite for v in VERIFIABLE} | {_LEDGER_RATE_CITE}
+    reported = {u.cite for u in unchecked()}
+    assert not checked & reported
+    assert checked | reported == {f.cite for f in CHECKLIST}
+    assert len(checked) + len(reported) == 20
 
 
 # --- Trade scoping ----------------------------------------------------------
