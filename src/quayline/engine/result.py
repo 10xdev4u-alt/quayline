@@ -65,6 +65,7 @@ from decimal import Decimal
 from quayline.engine.daycount import DayCountResult
 from quayline.evidence.checklist import Ground
 from quayline.regulation.checklist import ChecklistField
+from quayline.regulation.kill_switch import Obligation
 
 #: A finding code is a stable identifier, not a sentence. Codes are what a caller
 #: filters on and what a test asserts, and a code that changes when the wording
@@ -129,6 +130,22 @@ class AuditResult:
     # What we could not fill in, and what we want a human to read before filing.
     unfilled_fields: tuple[ChecklistField, ...] = ()
     warnings: tuple[str, ...] = ()
+
+    #: 541.5 applied to the omissions found on the document. ELIMINATED means at least
+    #: one required minimum was missing, which is the automatic remedy in this category:
+    #: no cure period and no showing of prejudice. Issue 207.
+    #:
+    #: Carried on the result rather than recomputed by a renderer, because a letter that
+    #: derives its own conclusion from a list of findings can disagree with the engine
+    #: about whether the obligation survived.
+    obligation: Obligation = Obligation.INTACT
+
+    #: 541.6 disclosures this build cannot check, seven of the twenty. Issue 207.
+    #:
+    #: A result with no omissions and no field here would read as "the invoice complies",
+    #: which is a claim about seven clauses nobody looked at. The two travel together so
+    #: that reading is not available.
+    unverified_fields: tuple[ChecklistField, ...] = ()
 
     findings: tuple[Finding, ...] = ()
 

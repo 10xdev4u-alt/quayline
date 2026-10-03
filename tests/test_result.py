@@ -46,6 +46,13 @@ PUBLIC_FIELDS = {
     # billed without recomputing them. The lock exists so that adding a field is a
     # decision rather than an accident, and this one is recorded here.
     "day_count",
+    # Added in issue 207. `obligation` is 541.5 applied to the omissions found on the
+    # document, which is the automatic remedy and the reason a letter must not derive it
+    # from a list of findings it might read differently. `unverified_fields` is the seven
+    # 541.6 clauses this build cannot check, which travel with the result so that "no
+    # omissions" cannot be read as "the invoice complies".
+    "obligation",
+    "unverified_fields",
 }
 
 

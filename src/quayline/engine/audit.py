@@ -48,10 +48,12 @@ from quayline.engine.amount import compare as compare_amount
 from quayline.engine.availability import availability_contradiction
 from quayline.engine.daycount import recompute
 from quayline.engine.dedupe import demote_daycount
+from quayline.engine.disclosure import check_disclosures
 from quayline.engine.result import (
     CODE_AMOUNT_VARIANCE,
     CODE_AVAILABILITY_CONTRADICTION,
     CODE_DAYCOUNT_VARIANCE,
+    CODE_FIELD_OMITTED,
     CODE_TARIFF_UNRESOLVED,
     AuditResult,
     Finding,
@@ -138,6 +140,26 @@ def audit(
     computed = recompute(disclosures, carrier, terminal=terminal)
 
     findings: list[Finding] = []
+
+    # 541.6 against the document, 541.5 applied to what is missing. This runs before the
+    # day count and before the money because it needs neither, so it is the one check
+    # that works for every carrier rather than for the one we hold rates for.
+    disclosure = check_disclosures(bound, text)
+    for omission in disclosure.omissions:
+        findings.append(
+            Finding(
+                code=CODE_FIELD_OMITTED,
+                cite=omission.cite,
+                summary=omission.describe(),
+                detail=(
+                    "46 CFR 541.5: failure to include any of the required minimum "
+                    "information eliminates the obligation to pay the applicable "
+                    "charge. There is no cure period and no showing of prejudice."
+                ),
+                grounds=(Ground.DISCLOSURE_OMITTED,),
+            )
+        )
+
     for discrepancy in computed.discrepancies:
         lines = discrepancy.as_letter_lines()
         findings.append(
@@ -146,7 +168,16 @@ def audit(
                 cite=f"{CITE_FREE_TIME_START}, {CITE_FREE_TIME_END}, {CITE_CHARGED_DATES}",
                 summary=lines[0] if lines else "the chargeable day count disagrees",
                 detail="\n".join(lines),
-                grounds=(Ground.DISCLOSURE_OMITTED,),
+                # Deliberately not DISCLOSURE_OMITTED. The carrier stated its start, its
+                # end, its allowance and the dates it charged, so nothing is missing and
+                # 541.5 does not fire. What is wrong is that those numbers do not agree
+                # with each other, which is a factual dispute the carrier can answer by
+                # showing its working, and it needs evidence to answer.
+                #
+                # Issue 207 found this ground on a day count finding while wiring up the
+                # real omission check. The letter told the carrier these claims need
+                # nothing from them, on a dispute where they plainly do.
+                grounds=(Ground.CONTRACT_CONDITION,),
                 days=discrepancy.dates,
             )
         )
@@ -239,6 +270,9 @@ def audit(
         computed_charge_days=len(computed.expected_dates),
         findings=ordered,
         day_count=computed,
+        obligation=disclosure.obligation,
+        unverified_fields=disclosure.unverified,
+        warnings=disclosure.warnings,
     )
 
 

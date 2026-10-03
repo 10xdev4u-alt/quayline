@@ -31,7 +31,9 @@ from __future__ import annotations
 import base64
 import hashlib
 
+from quayline.engine.result import CODE_FIELD_OMITTED
 from quayline.evidence.packet import GroundSection, render
+from quayline.regulation.kill_switch import Obligation, consequence_text
 from quayline.serve.audit_runner import Findings
 from quayline.web.design import stylesheet
 from quayline.web.example import day, money
@@ -77,6 +79,17 @@ RESULT_CSS = """
   border: 1px solid; padding: 0.2rem 0.45rem; }
 .flag.blocked { color: var(--signal); border-color: var(--signal); }
 .flag.clear   { color: var(--sea);   border-color: var(--sea); }
+
+/* The 541.5 notice. An eliminated obligation is the strongest thing this page can
+   say, and it needs to be a statement rather than a word in a column. */
+.voided { margin-top: var(--gap-loose); border: 2px solid var(--signal);
+  background: var(--deck); padding: 1rem 1.1rem; }
+.voided h2 { margin: 0 0 0.5rem; font-size: 0.95rem; font-family: var(--font-stencil);
+  font-weight: var(--weight-stencil); letter-spacing: 0.02em; text-transform: uppercase;
+  color: var(--signal); }
+.voided p { margin: 0; max-width: var(--measure); }
+.voided ul { margin: 0.6rem 0 0; padding-left: 1.1rem; max-width: var(--measure); }
+.voided li { margin: 0.2rem 0; }
 
 /* What to do next. The reader has an action to take and it should not be a guess. */
 .next { margin-top: var(--gap-loose); border-left: 2px solid var(--signal); padding: 0.8rem 0 0.8rem 1rem; }
@@ -255,6 +268,33 @@ COPY_SCRIPT = """
 """
 
 
+def _void_notice(findings: Findings) -> str:
+    """What 541.5 does, when it fires. Nothing at all when it does not.
+
+    The consequence sentence is read from ``kill_switch`` so a page cannot end up
+    describing a remedy the regulation no longer provides. The clause list is built
+    from the omissions the engine found, so a reader sees which disclosures are
+    missing rather than being told there is something wrong somewhere.
+    """
+    result = findings.result
+    if result.obligation is not Obligation.ELIMINATED:
+        return ""
+    # The summary already opens with its own clause, because `Omission.describe` puts
+    # it there for the letter. Printing the cite again as a chip would show
+    # 541.6(b)(2) twice, so the list carries the sentence and the citation rides inside
+    # it rather than beside it.
+    clauses = "".join(
+        f"<li>{esc(f.summary)}</li>" for f in result.findings if f.code == CODE_FIELD_OMITTED
+    )
+    return (
+        '<section class="voided">'
+        "<h2>You do not have to pay this</h2>"
+        f"<p>{esc(consequence_text())}</p>"
+        f"<ul>{clauses}</ul>"
+        "</section>"
+    )
+
+
 def result_page(findings: Findings) -> str:
     """The result, as a document rather than a dump."""
     result = findings.result
@@ -281,6 +321,7 @@ def result_page(findings: Findings) -> str:
         "<main>\n"
         # Which invoice was actually audited. A client who uploaded the wrong PDF
         # should find out here rather than in the carrier's reply.
+        f"{_void_notice(findings)}\n"
         f"{rail(_rail_pairs(findings))}\n"
         f"{day_cells(findings.strip.days if findings.strip else [], flagged)}\n"
         f"{legend()}\n"

@@ -52,41 +52,76 @@ def audited(resolve_tariff: bool = True) -> AuditResult:
 # ------------------------------------------------------------- the ground rules
 
 
-def test_an_omission_finding_makes_the_whole_claim_automatic() -> None:
-    """The merge rule, and it is the opposite of what I first wrote.
+def test_an_omission_makes_its_own_claim_automatic() -> None:
+    """541.5 earns automatic, and only by being true.
 
-    The fixture produces two day-count findings on the same ground. With no tariff
-    resolved both are omissions and the claim is automatic. With the tariff resolved
-    they are demoted to diagnostics, and the first version of the merge used ``and``,
-    which demoted a claim that needs no evidence into one that does, blocking a packet
-    on evidence 541.5 says nobody has to supply.
+    The fixture omits the invoice due date, 541.6(b)(2), which 541.5 makes automatic.
+    Its day-count findings are on a different ground and are contested, because the
+    carrier stated its start, its end, its allowance and the dates it charged. Nothing
+    is missing there, so nothing about those claims is automatic.
 
-    The rule is ``or``: an omission on the ground means the claim needs no showing,
-    whatever else landed on it. A carrier that failed to disclose cannot demand proof
-    of a disclosure that does not exist.
+    Before issue 207 the day-count findings carried DISCLOSURE_OMITTED, which merged
+    them with the real omission into one automatic claim and told the carrier those
+    disputes need nothing from it. They need its working.
     """
-    with_tariff = audited()
-    without = audited(resolve_tariff=False)
-
-    assert with_tariff.recomputed_total == Decimal("780.00")
-
-    # Without a tariff the only findings are the two day-count ones, both omissions,
-    # so the single claim is automatic and needs nothing.
-    bare = dispute_for(without)
-    assert [s.is_automatic for s in bare.sections] == [True]
-
-    # With the tariff resolved there is also an amount variance, which is a different
-    # ground and is contested, because the carrier disclosed everything and we are
-    # asking it to redo a multiplication rather than to supply a missing disclosure.
-    full = dispute_for(with_tariff)
-    assert {s.claim.ground for s in full.sections} == {
+    packet = dispute_for(audited())
+    assert {s.claim.ground for s in packet.sections} == {
         Ground.DISCLOSURE_OMITTED,
         Ground.CONTRACT_CONDITION,
     }
-    omitted = full.section_for(Ground.DISCLOSURE_OMITTED)
-    arithmetic = full.section_for(Ground.CONTRACT_CONDITION)
+    omitted = packet.section_for(Ground.DISCLOSURE_OMITTED)
+    arithmetic = packet.section_for(Ground.CONTRACT_CONDITION)
     assert omitted is not None and omitted.is_automatic is True
     assert arithmetic is not None and arithmetic.is_automatic is False
+
+
+def test_the_day_count_is_contested_without_a_tariff_too() -> None:
+    """The control for the test above.
+
+    Without a tariff the day counts are no longer diagnostics, so this is the only case
+    where the contested claim rests on the day count rather than on the multiplication.
+    It must still be contested. A day count the carrier can answer by showing its
+    calendar is not an omission.
+    """
+    packet = dispute_for(audited(resolve_tariff=False))
+    day_count = packet.section_for(Ground.CONTRACT_CONDITION)
+    assert day_count is not None
+    assert day_count.is_automatic is False
+
+
+def test_an_omission_sharing_a_ground_makes_the_whole_claim_automatic() -> None:
+    """The merge rule, tested directly rather than through a fixture that stopped
+    producing the shape it needed.
+
+    An omission landing on a ground alongside other findings means the claim needs no
+    showing, whatever else is on it. A carrier that failed to disclose cannot demand
+    proof of a disclosure that does not exist. The rule is ``or``; an ``and`` would
+    demote a claim that needs no evidence into one that does, blocking a packet on
+    evidence 541.5 says nobody has to supply.
+    """
+    omission = Finding(
+        code=CODE_FIELD_OMITTED,
+        cite="541.6(b)(2)",
+        summary="the invoice due date is not stated",
+        grounds=(Ground.DISCLOSURE_OMITTED,),
+    )
+    on_its_own = dispute_for(
+        AuditResult(carrier="Maersk", findings=(omission,)),
+    )
+    assert [s.is_automatic for s in on_its_own.sections] == [True]
+
+    contested_alongside = Finding(
+        code=CODE_DAYCOUNT_VARIANCE,
+        cite="541.6(b)(8)",
+        summary="one day was charged after the allowance ran out",
+        grounds=(Ground.DISCLOSURE_OMITTED,),
+    )
+    merged = dispute_for(
+        AuditResult(carrier="Maersk", findings=(contested_alongside, omission)),
+    )
+    assert [s.is_automatic for s in merged.sections] == [True], (
+        "the omission shares the ground, so the claim needs no showing"
+    )
 
 
 def test_the_amount_variance_claim_carries_the_money() -> None:
