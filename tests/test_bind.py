@@ -380,8 +380,9 @@ def realistic_invoice() -> bytes:
     the binder meets on any real carrier PDF, and until issue 214 every test in this
     repository used a fixture whose every line ended in a colon.
 
-    Written inline rather than checked in so a reviewer reads what it says, the same
-    reason `tests/conftest.py` builds PDFs by hand.
+    **Issue 216 taught the binder to read this**, so it is no longer the example of a
+    document we cannot read. `unreadable_invoice` below is, and the tests that need a
+    genuine extraction failure use that instead.
     """
     return build_pdf(
         "MAERSK",
@@ -408,18 +409,33 @@ def realistic_invoice() -> bytes:
     )
 
 
-def test_the_realistic_layout_is_not_read_as_a_fully_disclosed_invoice() -> None:
-    """The control. A realistic invoice is not label:value, so most of it is unread.
+def test_the_carrier_layout_is_now_read() -> None:
+    """Issue 216 taught the binder to read columns. This is the record of that.
 
-    If this ever goes to zero the binder learned a second layout, which is issue 214's
-    second half and worth knowing about.
+    Issue 214 asserted the opposite, that a carrier-shaped invoice yielded almost nothing,
+    and it was right at the time. A document shaped like a real invoice now yields the
+    labels the engine needs, which is the whole point of #216.
     """
 
     text = extract_text_layer(realistic_invoice())
     fields = read_fields(text.lines)
-    assert len(fields.values) < 10, (
-        f"the binder now reads {len(fields.values)} labels out of this document, so either "
-        f"a second layout is supported and this test should be deleted, or something changed"
+    assert len(fields.values) >= 10, (
+        f"only {len(fields.values)} labels read from a carrier-shaped invoice"
+    )
+
+
+def unreadable_invoice() -> bytes:
+    """A document in no layout this binder knows, so issue 214's guarantee has a subject.
+
+    Prose and references, no field at all. This is what a forwarder statement looks like
+    to the extractor, and the binder has to refuse it rather than accuse a carrier of
+    withholding things it may well have stated.
+    """
+    return build_pdf(
+        "FORWARDER STATEMENT OF ACCOUNT",
+        "Reference 4471-B",
+        "Please remit to the address below within the usual terms.",
+        "Queries 020 7946 0000",
     )
 
 
@@ -435,7 +451,7 @@ def test_an_unreadable_field_is_not_reported_as_an_omission() -> None:
     obligation to pay, on a compliant invoice, and the claim gets filed.
     """
 
-    text = extract_text_layer(realistic_invoice())
+    text = extract_text_layer(unreadable_invoice())
     with pytest.raises(UnreadableDocumentError) as caught:
         bind_ledger(text)
 
@@ -473,7 +489,7 @@ def test_an_extraction_failure_is_a_different_type_from_an_omission() -> None:
 def test_the_extraction_failure_names_the_field_it_could_not_read() -> None:
     """The person holding the document has to know which line defeated us."""
 
-    text = extract_text_layer(realistic_invoice())
+    text = extract_text_layer(unreadable_invoice())
     with pytest.raises(UnreadableDocumentError) as caught:
         bind_ledger(text)
     assert caught.value.field
