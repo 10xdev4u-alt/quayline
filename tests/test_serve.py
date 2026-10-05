@@ -28,6 +28,7 @@ from uuid import uuid4
 
 import pytest
 
+from conftest import build_pdf
 from quayline.cli.audit_cmd import EXIT_ENGINE_ERROR, EXIT_FILE_WORTHY, main
 from quayline.cli.audit_render import resolve_disclosed
 from quayline.cli.serve_cmd import build_runner, find_runner
@@ -36,6 +37,7 @@ from quayline.serve.app import MAX_UPLOAD_BYTES, build_handler
 from quayline.serve.pages import letter_page
 from quayline.serve.security import BindRefusedError, assert_loopback
 from quayline.web.document import script_hash
+from test_carrier_layout import MAERSK_COLUMNS
 
 FIXTURE = Path("tests/fixtures/born_digital_invoice.pdf")
 
@@ -322,11 +324,22 @@ def test_an_engine_failure_is_two_and_says_why(server: str) -> None:
     assert payload["error"]
 
 
-def test_a_missing_carrier_is_refused_with_a_message(server: str) -> None:
-    status, body = post(server, "/audit", {"terminal": "newark"}, FIXTURE.read_bytes())
+def test_the_reference_fixture_places_itself_by_its_rate_rule(server: str) -> None:
+    """Issue 220 replaced the test that used to sit here.
 
-    assert status == 400
-    assert "carrier" in json.loads(body)["error"].lower()
+    That test asserted a missing carrier is refused before anything is read, on the
+    reasoning that 541.6 does not ask a carrier to name itself. The reasoning holds for
+    *guessing* and not for *reading*, because 541.6(c)(2) makes the carrier disclose the
+    rule it billed under. The fixture names `Maersk US Newark Dry`, so it places itself
+    and the upload succeeds with no carrier field at all.
+
+    The refusal is still covered, by `test_an_unidentifiable_carrier_asks_for_the_name`,
+    which is the case where the invoice genuinely does not say who it is.
+    """
+    status, body = post(server, "/letter", {"terminal": "newark"}, FIXTURE.read_bytes())
+
+    assert status == 200, body[:300]
+    assert "Maersk" in body
 
 
 def test_a_missing_file_is_refused(server: str) -> None:
@@ -519,3 +532,85 @@ def test_the_pages_stay_html(server: str) -> None:
     """The control, so the fix above did not relabel the pages."""
     with urllib.request.urlopen(f"{server}/") as response:
         assert response.headers.get_content_type() == "text/html"
+
+
+# --- The carrier is read from the invoice, issue 220 ------------------------
+
+
+def test_a_reader_can_post_a_carrier_invoice_with_no_carrier_field(server: str) -> None:
+    """The whole point, and it is the last thing between a reader and running this.
+
+    Issue 218 made the carrier readable from the disclosed rate rule. Until the form
+    used it, a reader still had to type the carrier's exact published name, and a
+    near miss raised rather than warned.
+    """
+    body = _carrier_invoice_pdf()
+    code, page = post(f"{server}", "/letter", {}, body)
+
+    assert code != 400, f"the intake refused a carrier invoice: {page[:400]}"
+    assert "541.6" in page, "no findings rendered, so nothing was audited"
+    assert "Maersk" in page
+
+
+def test_the_page_says_the_carrier_was_inferred_and_from_which_rule(server: str) -> None:
+    """A reader who did not name the carrier needs to see where the answer came from.
+
+    A verdict with no stated basis asks for trust the tool has not earned, and #218
+    carries the rule reference on `Identified` for exactly this.
+    """
+    _, page = post(f"{server}", "/letter", {}, _carrier_invoice_pdf())
+
+    assert "Maersk US Newark Dry" in page, "the page must show the rule the carrier was read from"
+
+
+def test_the_carrier_field_is_not_required(server: str) -> None:
+    """The form itself, so a reader is not stopped before they can try."""
+    with urllib.request.urlopen(f"{server}/") as response:
+        body = response.read().decode()
+    assert 'name="carrier"' in body
+    assert 'id="carrier" required' not in body
+    assert "required" not in body.split('id="carrier"')[1].split(">")[0]
+
+
+def test_an_unidentifiable_carrier_asks_for_the_name(server: str) -> None:
+    """Not an error page. An extra question, naming the rule we could not place."""
+    body = _carrier_invoice_pdf(replace_rule="CMA CGM US Felixstowe Dry")
+    code, page = post(f"{server}", "/letter", {}, body)
+
+    assert code == 400
+    assert "CMA CGM US Felixstowe Dry" in page, (
+        "the message must name the rule, so the reader knows which carrier to say"
+    )
+    assert "carrier" in page.lower()
+
+
+def _carrier_invoice_pdf(replace_rule: str = "") -> bytes:
+    """A Maersk-shaped column invoice, built the way issue 216's fixture is."""
+    if replace_rule:
+        lines = tuple(line.replace("Maersk US Newark Dry", replace_rule) for line in MAERSK_COLUMNS)
+    else:
+        lines = MAERSK_COLUMNS
+    return build_pdf(*lines)
+
+
+def test_the_rail_says_the_carrier_was_read_not_typed(server: str) -> None:
+    """The trust point, and the reason #218 carries the rule on `Identified`.
+
+    A reader who did not type a carrier and got a verdict has no way to tell whether the
+    tool read the invoice or guessed at it. "read from the rule" is the difference between
+    an answer and a claim.
+    """
+    _, page = post(server, "/letter", {"terminal": "newark"}, FIXTURE.read_bytes())
+
+    assert "read from the rule" in page, (
+        "the page must say the carrier came off the document, not from the reader"
+    )
+
+
+def test_a_carrier_the_reader_typed_is_not_labelled_as_read(server: str) -> None:
+    """Otherwise the label becomes decoration and stops meaning anything."""
+    _, page = post(
+        server, "/letter", {"carrier": "Maersk", "terminal": "newark"}, FIXTURE.read_bytes()
+    )
+
+    assert "read from the rule" not in page, "the reader named the carrier themselves"

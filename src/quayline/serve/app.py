@@ -32,7 +32,11 @@ from typing import Any, ClassVar, TextIO
 
 from quayline.cli.exit_codes import EXIT_CLEAN, EXIT_ENGINE_ERROR
 from quayline.ingest.bind import BindError, OmittedError
-from quayline.serve.audit_runner import AuditRunner, FindRunner
+from quayline.serve.audit_runner import (
+    AuditRunner,
+    CarrierNotIdentifiedError,
+    FindRunner,
+)
 from quayline.serve.landing import landing_document
 from quayline.serve.pages import first_missing, specimen_page
 from quayline.serve.security import assert_loopback
@@ -55,8 +59,10 @@ from quayline.serve.upload import (
 from quayline.serve.upload import (
     error as _error,
 )
+from quayline.web.design import stylesheet
 from quayline.web.document import script_hash
 from quayline.web.filing import filing_document
+from quayline.web.intake import COMPONENT_CSS, esc
 from quayline.web.result import result_page
 from quayline.web.result import script_hash as result_script_hash
 
@@ -319,7 +325,10 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
                 return
             pdf, fields = upload
 
-            carrier, terminal = fields["carrier"], fields.get("terminal", "")
+            # Issue 220. The carrier field is optional because 541.6(c)(2) makes the
+            # invoice disclose the rule it billed under, and #218 reads the carrier from
+            # that. Where it cannot, the reader is asked, and the message names the rule.
+            carrier, terminal = fields.get("carrier", "").strip(), fields.get("terminal", "")
             # One branch, one runner. The two routes want different things and running
             # both would audit the same PDF twice, which on a one-connection server means
             # every other request waits for work nobody asked for.
@@ -330,6 +339,21 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
                     code = findings.code
                 else:
                     code, output = run_audit(pdf, carrier, terminal, True)
+            except CarrierNotIdentifiedError as exc:
+                # Issue 220. This is a question, not a fault, and it is asked on a page
+                # rather than in JSON because the reader is in a browser. The message
+                # names the rule that stopped us, which is what makes it answerable.
+                if structured:
+                    # `_html` takes an exit code and maps it to a status, so passing 400
+                    # there produced a 200. This is an HTTP status and goes through _send.
+                    self._send(
+                        400,
+                        _error_page("We could not tell which carrier this is", str(exc)),
+                        "text/html; charset=utf-8",
+                    )
+                    return
+                self._json(400, {"error": str(exc), "exit_code": EXIT_ENGINE_ERROR})
+                return
             except (BindError, KeyError, ValueError, OmittedError) as exc:
                 # Every one of these is an answer we can give a person: the document is
                 # unreadable, the carrier is one we have no clock rule for, or a
@@ -350,6 +374,32 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
                 self._send(_http_status(code), output, "application/json; charset=utf-8")
 
     return Handler
+
+
+def _error_page(heading: str, body: str) -> str:
+    """A page, not a JSON error.
+
+    This endpoint is read by a person in a browser. Issue 214 established that a refusal
+    has to explain itself, and a JSON body on a form post is not an explanation.
+    """
+    return (
+        "<!doctype html>\n"
+        '<html lang="en">\n'
+        "<head>\n"
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        "<title>Quayline: one more thing</title>\n"
+        f"<style>{stylesheet()}{COMPONENT_CSS}</style>\n"
+        "</head>\n"
+        "<body>\n"
+        '<div class="wrap">\n'
+        f"<h1>{esc(heading)}</h1>\n"
+        f'<p class="hint">{esc(body)}</p>\n'
+        '<p><a href="/">Back to the intake</a></p>\n'
+        "</div>\n"
+        "</body>\n"
+        "</html>\n"
+    )
 
 
 def run_server(

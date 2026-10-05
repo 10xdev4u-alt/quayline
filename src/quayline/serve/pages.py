@@ -66,9 +66,9 @@ h2 { font-size:1rem; margin:2.5rem 0 .3rem; }
     <label for="pdf">Invoice PDF</label>
     <input type="file" id="pdf" name="pdf" accept="application/pdf" required>
 
-    <label for="carrier">Carrier, as published</label>
-    <input type="text" id="carrier" name="carrier" value="Maersk" required
-           list="known" autocomplete="off">
+    <label for="carrier">Carrier, only if we cannot tell</label>
+    <input type="text" id="carrier" name="carrier"
+           placeholder="read from the invoice" list="known" autocomplete="off">
     <datalist id="known">
       <option value="Maersk"></option>
       <option value="Hapag-Lloyd"></option>
@@ -106,12 +106,18 @@ def first_missing(fields: dict[str, str], pdf: bytes) -> str | None:
 
     One function rather than three sequential checks, because three checks means three
     returns and a reviewer has to prove none of them became unreachable.
+
+    Issue 220 removed the carrier check from here. 541.6(c)(2) makes the invoice disclose
+    the rule it billed under, so the carrier is read from the document rather than
+    demanded, and a document that cannot place itself asks further in, where the message
+    can name the rule that stopped us.
+
+    ``fields`` is still taken and still unused. It is the shape the caller has and the
+    shape this function will want again the moment a required field comes back, and
+    changing a signature to remove one unused argument is a larger change than the
+    argument.
     """
-    if not fields.get("carrier"):
-        return (
-            "a carrier is required, and 541.6 does not ask a carrier to name itself on "
-            "the invoice face."
-        )
+    del fields  # no required form field remains; see above
     if not pdf:
         return "no pdf file in the upload."
     if not pdf.startswith(b"%PDF"):
