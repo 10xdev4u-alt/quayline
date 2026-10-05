@@ -62,6 +62,7 @@ from quayline.cli.exit_codes import (
 from quayline.cli.serve_cmd import add_parser as add_serve_parser
 from quayline.cli.serve_cmd import serve_intake
 from quayline.engine.audit import audit
+from quayline.engine.identify import identify_carrier
 from quayline.engine.result import AuditResult
 from quayline.evidence.capture import Capture, Register
 from quayline.evidence.packet import Claim, Packet, assemble, render
@@ -69,6 +70,7 @@ from quayline.filing.dispute import dispute_for
 from quayline.filing.evidence import EvidenceRefusedError, items_for
 from quayline.ingest.bind import BindError, bind_ledger
 from quayline.ingest.pdftext import extract_text_layer
+from quayline.tariffs.corpus import load_corpus
 
 #: Re-exported from ``cli.exit_codes`` so the existing importers of this module keep
 #: working. The intake cannot import this module, so the shared numbers had to move
@@ -93,11 +95,13 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("path", type=Path, help="the invoice PDF")
     run.add_argument(
         "--carrier",
-        required=True,
+        required=False,
+        default="",
         help=(
             "carrier name as published, for example 'Maersk' or 'Hapag-Lloyd'. "
-            "Required because 541.6 does not ask a carrier to name itself on the "
-            "invoice face."
+            "Optional since issue 218: when the invoice names a rate rule we hold a "
+            "schedule for, the carrier is read from that rule. Supply it for any other "
+            "carrier, which is the honest limit of detection."
         ),
     )
     run.add_argument("--terminal", default="", help="terminal or gateway, where it matters")
@@ -145,9 +149,10 @@ def _audit_one(args: argparse.Namespace) -> _Run:
 
     data = args.path.read_bytes()
     bound = bind_ledger(extract_text_layer(data))
+    carrier = args.carrier or _identify(bound.rate_rule)
     result = audit(
         data,
-        args.carrier,
+        carrier,
         args.terminal,
         resolve_disclosed(bound.rate_rule, args.terminal),
         invoice_ref=args.invoice_ref,
@@ -156,6 +161,28 @@ def _audit_one(args: argparse.Namespace) -> _Run:
         result=result,
         invoice_date=bound.invoice_date,
         evidence=capture_request(args),
+    )
+
+
+def _identify(declared_rule: str) -> str:
+    """The carrier the disclosed rule names, or an explanation and nothing else.
+
+    Issue 218. Reads the rate rule the invoice discloses under 541.6(c)(2) and looks it
+    up in the transcribed corpus, so the carrier comes out of tariff data somebody read
+    and cited rather than out of a letterhead.
+
+    Where that cannot answer, the reader is asked. 541.6 does not require a carrier to
+    name itself on the invoice face, and a default would be a guess, and a guess here
+    computes a day count from the wrong rule and looks entirely plausible.
+    """
+    found = identify_carrier(declared_rule, tuple(load_corpus().values()))
+    if found is not None:
+        return found.carrier
+    raise EngineError(
+        f"could not tell which carrier this invoice is from. It names the rate rule "
+        f"{declared_rule!r}, and either no schedule is transcribed under that name or "
+        f"more than one carrier uses it. Say which with --carrier, for example "
+        f"--carrier Maersk. `quayline coverage` lists what is held."
     )
 
 
