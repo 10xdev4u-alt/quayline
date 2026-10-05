@@ -321,7 +321,7 @@ blocks, then closed. Proving a control works is part of shipping it.
 
 ## 5. What the codebase looks like
 
-18,187 lines across 83 modules, 1,524 tests, zero runtime dependencies. Dev tools
+18,299 lines across 84 modules, 1,537 tests, zero runtime dependencies. Dev tools
 only: ruff, mypy, pytest.
 
 Lines and modules measured at commit 7f7c066 with
@@ -345,6 +345,7 @@ src/quayline/
     vacatur.py        541.4 vacated, 41104(f), liability-basis checks
     source.py         provenance primitive
   engine/       the audit checks and the recomputation
+    identify.py       which carrier this invoice is, from the rule it discloses
     daycount.py       expected days from the invoice's own disclosures
     amount.py         expected money from the carrier's own rate rule
     recovery.py       which findings carry money, and which are diagnostic
