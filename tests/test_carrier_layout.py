@@ -19,7 +19,7 @@ from decimal import Decimal
 import pytest
 
 from conftest import build_pdf
-from quayline.ingest.bind import UnreadableDocumentError, bind_ledger
+from quayline.ingest.bind import BoundLedger, UnreadableDocumentError, bind_ledger
 from quayline.ingest.fields import FieldError, parse_date, parse_decimal, read_fields
 from quayline.ingest.pdftext import extract_text_layer
 
@@ -67,7 +67,7 @@ LABEL_VALUE = (
 )
 
 
-def _bind(lines: tuple[str, ...]):
+def _bind(lines: tuple[str, ...]) -> BoundLedger:
     return bind_ledger(extract_text_layer(build_pdf(*lines)))
 
 
