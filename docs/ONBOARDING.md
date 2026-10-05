@@ -321,7 +321,7 @@ blocks, then closed. Proving a control works is part of shipping it.
 
 ## 5. What the codebase looks like
 
-18,888 lines across 86 modules, 1,570 tests, zero runtime dependencies. Dev tools
+18,888 lines across 86 modules, 1,575 tests, zero runtime dependencies. Dev tools
 only: ruff, mypy, pytest.
 
 Lines and modules measured at commit 7f7c066 with
@@ -516,6 +516,27 @@ parser was appending `) T` to every line. Every test passed, because every test
 asked "is this string present" rather than "is this text correct". It took one
 comparison against poppler's `pdftotext` to find it. That check is now a permanent
 test. **If your parser has a reference implementation available, test against it.**
+
+**A confident note about a limitation that did not exist.** The `Dockerfile` said its pinned
+base image digest was amd64 and that "a multi-arch manifest is the next thing to do here". It
+was the manifest-list digest. `docker buildx imagetools inspect` against the pinned value
+lists linux/386, linux/amd64, linux/arm64/v8, linux/arm/v7 and linux/ppc64le, and it is the
+same digest the bare tag reports, which a per-architecture pin never is. #226.
+
+A wrong note about a known limitation is worse than no note, because it is load-bearing for
+the next person. It invites them to believe arm64 is unsupported, and invites them to "fix" it
+by pinning an amd64 digest, which is what they think the current state already is. **Before
+writing down that something is a limitation, run the command that would show it is not.**
+The same mistake produced a test here that asserted `image:tag@sha256:digest` was wrong, when
+it is Docker's standard form and the digest is what resolves.
+
+**A substring position assertion that measured the stylesheet.** #225 needed to assert that a
+new warning renders above the verdict header. The test compared
+`page.index("Check the carrier") < page.index("verdict")`, and `verdict` first occurs as
+`.verdict` in the embedded CSS, near the top of the document. It passed with the warning below
+the verdict, and it would have passed if the warning had been deleted entirely. It now matches
+`<header class="verdict">`. **A position assertion is only as good as the specificity of what
+it looks for** — the same failure as the `is this string present` entry above, one level up.
 
 **A gate that enforced nothing and looked like it enforced everything.** For an
 entire working session, every commit was made with
