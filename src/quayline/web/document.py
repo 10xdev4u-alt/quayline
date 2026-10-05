@@ -214,10 +214,10 @@ def intake_document(
         "</label>\n"
         '<input id="pdf" type="file" name="pdf" accept="application/pdf" required>\n'
         '<div class="controls">\n'
-        '<div><label class="stencil" for="carrier">carrier, as published</label>'
-        '<input id="carrier" name="carrier" value="Maersk" required></div>\n'
+        '<div><label class="stencil" for="carrier">carrier, if we cannot tell</label>'
+        '<input id="carrier" name="carrier" placeholder="read from the invoice"></div>\n'
         '<div><label class="stencil" for="terminal">terminal, where it matters</label>'
-        '<input id="terminal" name="terminal" value="newark" required></div>\n'
+        '<input id="terminal" name="terminal" value="newark"></div>\n'
         "</div>\n"
         '<button type="submit">Recompute the days</button>\n'
         '<p class="sr" id="status" role="status" aria-live="polite"></p>\n'

@@ -140,7 +140,10 @@ def _rail_pairs(findings: Findings) -> list[tuple[str, str]]:
     """What was read off the document, so the reader can check it is the right one."""
     bound = findings.bound
     return [
-        ("carrier", findings.result.carrier),
+        (
+            "carrier, read from the rule" if findings.carrier_inferred else "carrier",
+            findings.result.carrier,
+        ),
         ("terminal", findings.result.terminal),
         ("rule", bound.rate_rule),
         ("invoice date", day(bound.invoice_date)),

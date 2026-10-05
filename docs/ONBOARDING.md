@@ -321,7 +321,7 @@ blocks, then closed. Proving a control works is part of shipping it.
 
 ## 5. What the codebase looks like
 
-18,299 lines across 84 modules, 1,537 tests, zero runtime dependencies. Dev tools
+18,406 lines across 84 modules, 1,543 tests, zero runtime dependencies. Dev tools
 only: ruff, mypy, pytest.
 
 Lines and modules measured at commit 7f7c066 with

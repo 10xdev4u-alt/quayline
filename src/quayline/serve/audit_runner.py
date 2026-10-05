@@ -22,11 +22,13 @@ from typing import Any, Protocol, cast
 
 from quayline.cli.exit_codes import EXIT_CLEAN, EXIT_FILE_WORTHY
 from quayline.engine.audit import audit
+from quayline.engine.identify import identify_carrier
 from quayline.engine.result import AuditResult
 from quayline.evidence.packet import Packet, render
 from quayline.filing.dispute import dispute_for
-from quayline.ingest.bind import BoundLedger, bind_ledger
+from quayline.ingest.bind import BindError, BoundLedger, bind_ledger
 from quayline.ingest.pdftext import extract_text_layer
+from quayline.tariffs.corpus import load_corpus
 from quayline.web.daystrip import DayStrip, build_strip
 from quayline.web.strip_render import render_strip
 
@@ -108,6 +110,36 @@ def _audit(
     return bound, result
 
 
+class CarrierNotIdentifiedError(BindError):
+    """The invoice does not say which carrier it is, and it has to be told.
+
+    Issue 220. Carries the rule we read, because a reader who is asked a question cannot
+    answer it: naming the rule turns "we do not know which carrier this is" into "type the
+    carrier that publishes the schedule called this".
+    """
+
+    def __init__(self, rule: str) -> None:
+        super().__init__(
+            f"The invoice names the rate rule {rule!r}, and either no schedule is "
+            f"transcribed under that name or more than one carrier uses it. Fill in the "
+            f"carrier field with the name the invoice or its schedule uses."
+        )
+        self.rule = rule
+
+
+def _identify(pdf: bytes) -> str:
+    """The carrier the invoice discloses under 541.6(c)(2), or a refusal.
+
+    Never guesses from a letterhead and never from a near miss. See
+    `engine/identify.py` for why those two are excluded.
+    """
+    bound = bind_ledger(extract_text_layer(pdf))
+    found = identify_carrier(bound.rate_rule, tuple(load_corpus().values()))
+    if found is None:
+        raise CarrierNotIdentifiedError(bound.rate_rule)
+    return found.carrier
+
+
 @dataclass(frozen=True, slots=True)
 class Findings:
     """What the result page renders, as structure rather than as rendered text.
@@ -124,6 +156,13 @@ class Findings:
     bound: BoundLedger
     packet: Packet
     strip: DayStrip | None
+    #: Whether the carrier was read off the document rather than supplied. Issue 220.
+    #:
+    #: The page needs this because a reader who did not type a carrier and got a verdict
+    #: has no way to tell whether the tool read it or guessed it, and #218 deliberately
+    #: refuses to guess. Showing "read from the rule" is the difference between an answer
+    #: and a claim.
+    carrier_inferred: bool = False
 
 
 def find_runner(resolve_disclosed: Callable[[str, str], Any]) -> FindRunner:
@@ -136,8 +175,17 @@ def find_runner(resolve_disclosed: Callable[[str, str], Any]) -> FindRunner:
     """
 
     def run(pdf: bytes, carrier: str, terminal: str) -> Findings:
+        supplied = bool(carrier.strip())
+        if not supplied:
+            # Issue 220. The identification happens here rather than in the request
+            # handler so there is one path to it: an earlier version inferred in the
+            # handler and passed a filled-in carrier down, which meant the runner could
+            # not tell a carrier the reader supplied from one the document named, and
+            # the page then labelled both "read from the rule".
+            carrier = _identify(pdf)
         bound, result = _audit(pdf, carrier, terminal, resolve_disclosed)
         return Findings(
+            carrier_inferred=not supplied,
             code=EXIT_CLEAN if not result.findings else EXIT_FILE_WORTHY,
             result=result,
             bound=bound,
