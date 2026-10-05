@@ -648,3 +648,28 @@ def test_the_unreadable_page_never_says_the_carrier_withheld_anything(server: st
     lowered = page.lower()
     for word in ("withheld", "failed to disclose", "did not disclose", "breach"):
         assert word not in lowered, f"the page says {word!r} about a carrier we could not read"
+
+
+def test_the_page_shows_the_disagreement_above_the_verdict(server: str) -> None:
+    """Above, not in the rail.
+
+    A rail row is something a reader scans. This is something they have to act on before
+    filing, because a wrong day basis produces a wrong number.
+    """
+
+    # The invoice names a rule we hold, so detection can answer. The reader typed a
+    # different carrier, which is the disagreement.
+    body = build_pdf(*MAERSK_COLUMNS)
+
+    status, page = post(server, "/letter", {"carrier": "Hapag-Lloyd", "terminal": "newark"}, body)
+
+    assert status == 200, page[:300]
+    assert "Check the carrier" in page
+    assert "Maersk US Newark Dry" in page
+    # Match the element, not the word. `page.index("verdict")` finds `.verdict` in the
+    # stylesheet, which is at the top of the document, so the first version of this test
+    # asserted against the CSS and would have passed whatever the page did.
+    header = '<header class="verdict">'
+    assert page.index("Check the carrier") < page.index(header), (
+        "the warning must come before the verdict header, not after it"
+    )

@@ -22,6 +22,7 @@ from typing import Any, Protocol, cast
 
 from quayline.cli.exit_codes import EXIT_CLEAN, EXIT_FILE_WORTHY
 from quayline.engine.audit import audit
+from quayline.engine.disagreement import Disagreement, check_supplied
 from quayline.engine.identify import identify_carrier
 from quayline.engine.result import AuditResult
 from quayline.evidence.packet import Packet, render
@@ -163,6 +164,9 @@ class Findings:
     #: refuses to guess. Showing "read from the rule" is the difference between an answer
     #: and a claim.
     carrier_inferred: bool = False
+    #: Set when the carrier the reader supplied is not the one the invoice names.
+    #: Issue 224. Never an override: the computation used what the reader asked for.
+    disagreement: Disagreement | None = None
 
 
 def find_runner(resolve_disclosed: Callable[[str, str], Any]) -> FindRunner:
@@ -186,6 +190,7 @@ def find_runner(resolve_disclosed: Callable[[str, str], Any]) -> FindRunner:
         bound, result = _audit(pdf, carrier, terminal, resolve_disclosed)
         return Findings(
             carrier_inferred=not supplied,
+            disagreement=check_supplied(carrier, bound.rate_rule, tuple(load_corpus().values())),
             code=EXIT_CLEAN if not result.findings else EXIT_FILE_WORTHY,
             result=result,
             bound=bound,
