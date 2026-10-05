@@ -614,3 +614,37 @@ def test_a_carrier_the_reader_typed_is_not_labelled_as_read(server: str) -> None
     )
 
     assert "read from the rule" not in page, "the reader named the carrier themselves"
+
+
+def test_an_unreadable_document_answers_with_a_page_not_a_refusal(server: str) -> None:
+    """Issue 222. A reader who gave us a document gets a document back.
+
+    A refusal is honest and useless. This page lists what we read, marks the twenty
+    disclosures for the reader to check, and hands them a letter. The status is **200** on
+    purpose: it is a successful answer to a request, not a failed one.
+    """
+    body = build_pdf(
+        "FORWARDER STATEMENT OF ACCOUNT",
+        "Reference 4471-B",
+        "Settlement of charges for the month of August.",
+    )
+    status, page = post(server, "/letter", {}, body)
+
+    assert status == 200, f"an unreadable document should still answer, got {status}"
+    assert "FORWARDER STATEMENT OF ACCOUNT" in page, "we read the text, so show it"
+    assert "541.6(c)(2)" in page, "every clause must be listed for the reader to check"
+    assert "<textarea" in page, "the letter must be selectable with no script"
+
+
+def test_the_unreadable_page_never_says_the_carrier_withheld_anything(server: str) -> None:
+    """Issue 214's bug, in a different medium.
+
+    We could not read the document. So we may not allege anything about the carrier, and
+    541.5 makes an allegation automatic rather than arguable.
+    """
+    body = build_pdf("FORWARDER STATEMENT OF ACCOUNT", "Reference 4471-B")
+    _, page = post(server, "/letter", {}, body)
+
+    lowered = page.lower()
+    for word in ("withheld", "failed to disclose", "did not disclose", "breach"):
+        assert word not in lowered, f"the page says {word!r} about a carrier we could not read"
