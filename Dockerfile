@@ -28,7 +28,14 @@ RUN pip install --no-cache-dir --no-deps . && pip install --no-cache-dir --no-de
 
 # Same digest as the build stage, on CodeRabbit's finding. A floating tag means a rebuild
 # months from now produces a different base, and "it worked when we wrote it" becomes
-# untestable. The digest is amd64; a multi-arch manifest is the next thing to do here.
+# untestable. `tests/test_dockerfile.py` holds that in place.
+#
+# This is the manifest-list digest, not a per-architecture one, so the image is multi-arch:
+# linux/386, linux/amd64, linux/arm64/v8, linux/arm/v7, linux/ppc64le. It is the same value
+# `docker buildx imagetools inspect python:3.13-slim-bookworm` reports; a per-arch pin would
+# be a different digest. Verified for arm64 by building all eight stages, and the Dockerfile
+# and entrypoint make no architecture assumptions. Not verified by running: this repo's CI is
+# amd64 with no qemu handler registered, so an arm64 container cannot execute here.
 FROM python:3.13-slim-bookworm@sha256:5024f48ba9441d4b13a95d3945abc6365538e3a31109833367a1923523c6efed
 
 # curl is for the health check only. Python can do it without one, and a base image
