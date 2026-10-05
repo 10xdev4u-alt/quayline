@@ -586,9 +586,10 @@ def test_an_unidentifiable_carrier_asks_for_the_name(server: str) -> None:
 
 def _carrier_invoice_pdf(replace_rule: str = "") -> bytes:
     """A Maersk-shaped column invoice, built the way issue 216's fixture is."""
-    lines = MAERSK_COLUMNS
     if replace_rule:
         lines = tuple(line.replace("Maersk US Newark Dry", replace_rule) for line in MAERSK_COLUMNS)
+    else:
+        lines = MAERSK_COLUMNS
     return build_pdf(*lines)
 
 
