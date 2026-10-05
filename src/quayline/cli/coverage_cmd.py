@@ -39,6 +39,8 @@ from typing import Any, TextIO
 
 from quayline.engine.warnings import LIMITS, ModelLimit, coverage_gaps, limits_for
 from quayline.tariffs.corpus import load_corpus
+from quayline.tariffs.gateway_coverage import gateway_rows
+from quayline.tariffs.gateway_coverage import summarise as gateway_summary
 from quayline.tariffs.resolution import CarrierCoverage, Granularity, coverage_report
 from quayline.tariffs.uncovered import (
     BY_CARRIER,
@@ -246,6 +248,8 @@ def _human(rows: tuple[Row, ...], gaps: tuple[ModelLimit, ...]) -> str:
                 lines.append(f"      To acquire: {row.acquisition_task}")
         lines.append("")
 
+    lines.extend(_gateways())
+
     if gaps:
         lines.append("Applies to every carrier")
         for gap in gaps:
@@ -253,6 +257,35 @@ def _human(rows: tuple[Row, ...], gaps: tuple[ModelLimit, ...]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _gateways() -> list[str]:
+    """Coverage per gateway, for the carriers where it varies within the carrier.
+
+    Issue 84. The rows above answer "which carriers". These answer "which port", which is the
+    question an operator with a container on the ground actually has, and the two answers are
+    not the same: MSC is simultaneously supported at one gateway and unsupportable at fifteen.
+
+    ``unpublished`` is listed before the states we could act on, because it is the count that
+    tells a reader to stop looking. Someone who sees only "not held" would go and acquire a
+    tariff that does not exist.
+    """
+    counts = gateway_summary()
+    lines = [
+        f"Gateways: {sum(counts.values())} total across {len(counts)} states",
+        "  where unpublished = the carrier has no tariff there to acquire, so no effort of",
+        "  ours changes it, and priced = a figure resolves at that gateway.",
+    ]
+    for state in ("priced", "basis only", "nothing held", "unpublished"):
+        lines.append(f"  {state:<14} {counts.get(state, 0)}")
+    lines.append("")
+
+    for row in gateway_rows():
+        lines.append(f"  {row.headline()}")
+        lines.append(f"      {row.reason}")
+    lines.append("")
+
+    return lines
 
 
 def add_parser(sub: Any) -> None:
@@ -284,6 +317,18 @@ def run_coverage(args: argparse.Namespace, out: TextIO) -> int:
                 ],
                 "held": sum(1 for r in rows if r.rules_held > 0),
                 "not_held": sum(1 for r in rows if r.rules_held == 0),
+                # Issue 84. Kept out of "carriers" because these are not carriers and folding
+                # them in would make a reader count the same carrier several times over.
+                "gateways": [
+                    {
+                        "carrier": row.carrier,
+                        "gateway": row.gateway,
+                        "resolution": row.resolution,
+                        "reason": row.reason,
+                    }
+                    for row in gateway_rows()
+                ],
+                "gateway_states": gateway_summary(),
             },
             out,
             indent=2,
