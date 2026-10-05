@@ -62,6 +62,7 @@ from quayline.cli.exit_codes import (
 from quayline.cli.serve_cmd import add_parser as add_serve_parser
 from quayline.cli.serve_cmd import serve_intake
 from quayline.engine.audit import audit
+from quayline.engine.disagreement import check_supplied
 from quayline.engine.identify import identify_carrier
 from quayline.engine.result import AuditResult
 from quayline.evidence.capture import Capture, Register
@@ -157,11 +158,24 @@ def _audit_one(args: argparse.Namespace) -> _Run:
         resolve_disclosed(bound.rate_rule, args.terminal),
         invoice_ref=args.invoice_ref,
     )
+    _warn_on_carrier(args.carrier, bound.rate_rule)
     return _Run(
         result=result,
         invoice_date=bound.invoice_date,
         evidence=capture_request(args),
     )
+
+
+def _warn_on_carrier(supplied: str, declared_rule: str) -> None:
+    """Say so when the carrier typed is not the carrier the invoice names.
+
+    Issue 224. On stderr and not a failure, because the reader may know something the
+    document does not: a forwarder can reissue under a group name, and the computation used
+    what they asked for either way. Nothing is overridden.
+    """
+    found = check_supplied(supplied, declared_rule, tuple(load_corpus().values()))
+    if found is not None:
+        print(f"warning: {found.as_sentence()}", file=sys.stderr)
 
 
 def _identify(declared_rule: str) -> str:

@@ -100,6 +100,15 @@ RESULT_CSS = """
 .coverage p.lede { margin: 0; padding: 1rem 1rem 0; color: var(--slate);
   max-width: var(--measure); }
 
+/* A carrier the reader named that the invoice contradicts. Above the verdict, because a
+   wrong day basis produces a wrong number and the reader has to see this before filing. */
+.disagree { margin-bottom: var(--gap); border: 2px dashed var(--signal);
+  background: var(--deck); padding: 1rem 1.1rem; }
+.disagree h2 { margin: 0 0 0.5rem; font-size: 0.95rem; font-family: var(--font-stencil);
+  font-weight: var(--weight-stencil); letter-spacing: 0.02em; text-transform: uppercase;
+  color: var(--signal); }
+.disagree p { margin: 0; max-width: var(--measure); }
+
 /* The 541.5 notice. An eliminated obligation is the strongest thing this page can
    say, and it needs to be a statement rather than a word in a column. */
 .voided { margin-top: var(--gap-loose); border: 2px solid var(--signal);
@@ -134,6 +143,26 @@ RESULT_CSS = """
 .hint { color: var(--slate); font-size: 0.8rem; }
 @media (max-width: 40rem) { .verdict .amount { font-size: 2.4rem; } }
 """
+
+
+def _disagreement(findings: Findings) -> str:
+    """The reader's carrier against the invoice's, when they differ.
+
+    Issue 224. Rendered above the verdict rather than inside the rail, because a rail row
+    is something the reader scans and this is something they have to act on.
+
+    It is not a correction. The figures below used the carrier the reader supplied, which
+    is what they asked for, and the sentence says so.
+    """
+    warning = findings.disagreement
+    if warning is None:
+        return ""
+    return (
+        '<section class="disagree">'
+        "<h2>Check the carrier</h2>"
+        f"<p>{esc(warning.as_sentence())}</p>"
+        "</section>"
+    )
 
 
 def _rail_pairs(findings: Findings) -> list[tuple[str, str]]:
@@ -368,6 +397,11 @@ def result_page(findings: Findings) -> str:
         "</head>\n"
         "<body>\n"
         '<div class="wrap">\n'
+        # Issue 224: before the verdict, not inside it. The verdict number is computed
+        # from the carrier the reader supplied, so a reader who typed the wrong one reads
+        # a confident number first and the caveat second, which is the order that gets a
+        # wrong letter filed.
+        f"{_disagreement(findings)}\n"
         '<header class="verdict">'
         f'<span><span class="stencil">verdict</span><br>{esc(heading)}</span>'
         f'<span class="amount{" calm" if verdict != "dispute" else ""} data">'
