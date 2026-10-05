@@ -194,3 +194,22 @@ def test_the_command_line_is_silent_when_the_carrier_agrees(tmp_path: Path) -> N
         main(["audit", str(path), "--carrier", "Maersk", "--terminal", "newark"])
 
     assert "warning" not in captured.getvalue().lower()
+
+
+def test_the_command_line_with_no_carrier_at_all_is_silent(tmp_path: Path) -> None:
+    """The `--carrier`-less path, which is the #220 default and has no other coverage here.
+
+    `--carrier` defaults to `""`, so the warning check receives an empty string rather than
+    `None` and returns before touching it. Asserted because it is the one line that would
+    raise if the flag's default ever changed to `None`, and the engine would report a crash
+    to a reader who did nothing unusual.
+    """
+    path = tmp_path / "m.pdf"
+    path.write_bytes(build_pdf(*MAERSK_COLUMNS))
+
+    captured = io.StringIO()
+    with redirect_stderr(captured):
+        code = main(["audit", str(path), "--terminal", "newark"])
+
+    assert code in (0, 1), f"unexpected exit {code}"
+    assert "warning" not in captured.getvalue().lower()
