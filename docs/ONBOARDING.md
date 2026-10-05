@@ -321,7 +321,7 @@ blocks, then closed. Proving a control works is part of shipping it.
 
 ## 5. What the codebase looks like
 
-18,406 lines across 84 modules, 1,543 tests, zero runtime dependencies. Dev tools
+18,733 lines across 85 modules, 1,555 tests, zero runtime dependencies. Dev tools
 only: ruff, mypy, pytest.
 
 Lines and modules measured at commit 7f7c066 with
@@ -386,6 +386,7 @@ src/quayline/
     intake.py         the rail, the day grid, the legend, the ledger
     reasoning.py      the engine's own sentence per day, with its citation
     result.py         the result page, rendered from structure not from markup
+    failforward.py    what we read, what we could not check, and a letter to send
     filing.py         the printable filing copy, black on white
     specimen.py       the technical specimen, for a reader who wants the fields
     document.py       page assembly and the hash-pinned script

@@ -31,7 +31,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, ClassVar, TextIO
 
 from quayline.cli.exit_codes import EXIT_CLEAN, EXIT_ENGINE_ERROR
-from quayline.ingest.bind import BindError, OmittedError
+from quayline.ingest.bind import (
+    BindError,
+    OmittedError,
+    UnreadableDocumentError,
+)
+from quayline.ingest.fields import read_fields
+from quayline.ingest.pdftext import extract_text_layer
 from quayline.serve.audit_runner import (
     AuditRunner,
     CarrierNotIdentifiedError,
@@ -61,6 +67,7 @@ from quayline.serve.upload import (
 )
 from quayline.web.design import stylesheet
 from quayline.web.document import script_hash
+from quayline.web.failforward import fail_forward_page
 from quayline.web.filing import filing_document
 from quayline.web.intake import COMPONENT_CSS, esc
 from quayline.web.result import result_page
@@ -339,20 +346,20 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
                     code = findings.code
                 else:
                     code, output = run_audit(pdf, carrier, terminal, True)
-            except CarrierNotIdentifiedError as exc:
-                # Issue 220. This is a question, not a fault, and it is asked on a page
-                # rather than in JSON because the reader is in a browser. The message
-                # names the rule that stopped us, which is what makes it answerable.
-                if structured:
+            except _ANSWERABLE as exc:
+                # A question for the reader rather than a fault in the document, so it is
+                # answered on a page when a person is in a browser and in JSON otherwise.
+                page = _answer_page(exc, pdf) if structured else None
+                if page is None:
+                    self._json(400, {"error": str(exc), "exit_code": EXIT_ENGINE_ERROR})
+                else:
                     # `_html` takes an exit code and maps it to a status, so passing 400
                     # there produced a 200. This is an HTTP status and goes through _send.
-                    self._send(
-                        400,
-                        _error_page("We could not tell which carrier this is", str(exc)),
-                        "text/html; charset=utf-8",
-                    )
-                    return
-                self._json(400, {"error": str(exc), "exit_code": EXIT_ENGINE_ERROR})
+                    #
+                    # The unreadable case is a 200 on purpose: the page is a useful answer
+                    # to somebody who gave us a document, not a failed request. Issue 222.
+                    status = 200 if isinstance(exc, UnreadableDocumentError) else 400
+                    self._send(status, page, "text/html; charset=utf-8")
                 return
             except (BindError, KeyError, ValueError, OmittedError) as exc:
                 # Every one of these is an answer we can give a person: the document is
@@ -374,6 +381,34 @@ def build_handler(run_audit: AuditRunner, find_fn: FindRunner) -> type[BaseHTTPR
                 self._send(_http_status(code), output, "application/json; charset=utf-8")
 
     return Handler
+
+
+#: Failures that are a question for the reader rather than a fault in the document.
+#:
+#: Issue 222 added the second of these. `CarrierNotIdentifiedError` asks who the carrier
+#: is. `UnreadableDocumentError` says we cannot read the document, and is answered with the
+#: fail-forward page rather than a refusal.
+_ANSWERABLE = (CarrierNotIdentifiedError, UnreadableDocumentError)
+
+
+def _answer_page(exc: Exception, pdf: bytes) -> str | None:
+    """The page to send for an answerable failure, or ``None`` to send JSON.
+
+    Two branches in one place rather than one per handler, so the pages are in the same
+    file as the reason they exist.
+
+    Issue 222: an unreadable document used to be refused. It is now answered with what we
+    read, the twenty disclosures marked for the reader to check, and a letter requesting
+    the ones we could not verify. It alleges nothing, because we have not established that
+    anything is missing, which is issue 214's bug in a different medium.
+
+    Issue 220: a carrier we cannot identify is asked for. The message names the rate rule
+    that stopped us, which is what makes it answerable.
+    """
+    if isinstance(exc, UnreadableDocumentError):
+        text = extract_text_layer(pdf)
+        return fail_forward_page(text, read_fields(text.lines))
+    return _error_page("We could not tell which carrier this is", str(exc))
 
 
 def _error_page(heading: str, body: str) -> str:
